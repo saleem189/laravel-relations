@@ -33,36 +33,36 @@ Auth::routes();
 Route::get('/pdf', function () {
 
     $projects = Project::with('users')->find(18);
-    $p =$projects->pivot_users->count();
+    $p = $projects->pivot_users->count();
     // dd($p);
-   // $projects = Project::with('users')->find(18)->toArray();
+    // $projects = Project::with('users')->find(18)->toArray();
 
     // return view('posts',compact('projects'));
     // return $projects->users;
     // $posts = Post::with('user')->get();
     // dd($projects->pivot_users);
-     return view('pdf',compact('projects','p'));
-    
+    return view('pdf', compact('projects', 'p'));
+
     /**
      * saving Collection to array then showing array
      */
-    
-//  $array = array();
-//  foreach($projects as $p)
-// {
-//     // dd($projects->pivot_users[1]->name);
-//     // dd($p);
-//     foreach($p->pivot_users as $user)
-//     {
-//         // dd($user->name);
-//     $array = array('post'=>$p->title,'user'=>$user->name);
-//     // dd($user->name);
-// }
-// }
-// dd($array);
 
-   
-    
+    //  $array = array();
+    //  foreach($projects as $p)
+    // {
+    //     // dd($projects->pivot_users[1]->name);
+    //     // dd($p);
+    //     foreach($p->pivot_users as $user)
+    //     {
+    //         // dd($user->name);
+    //     $array = array('post'=>$p->title,'user'=>$user->name);
+    //     // dd($user->name);
+    // }
+    // }
+    // dd($array);
+
+
+
 
 
     // $mpdf = new Mpdf();
@@ -77,14 +77,14 @@ Route::get('/users', function () {
      * creating user with faker
      * $users= User::factory()->create(); 
      */
-    
-     /**
-      * create 5 users instances means 5 reocrds / users
-      * User::factory()->count(5)->create();
-      */
 
-        //  $users= User::factory()->count(5)->create();
-    
+    /**
+     * create 5 users instances means 5 reocrds / users
+     * User::factory()->count(5)->create();
+     */
+
+    //  $users= User::factory()->count(5)->create();
+
 
 
     // \App\Models\Address::create([
@@ -94,16 +94,13 @@ Route::get('/users', function () {
     //     'zip_code' => 74200,
     // ]);
     $users = User::get();
-    return view('index',compact('users'));
-
-    
+    return view('index', compact('users'));
 });
 
 Route::get('/tags', function () {
     $tags = Tag::with('posts')->get();
     // dd($tags);
-    return view('tags',compact('tags'));
-    
+    return view('tags', compact('tags'));
 });
 
 Route::get('/pivot', function () {
@@ -137,13 +134,13 @@ Route::get('/pivot', function () {
 
 
 
-    
 
-        // $tag = Tag::first();
-        // dd($tag->id);
-        
-        // $post= Post::with('tags')->first();
-        // $post->tags()->attach(3);
+
+    // $tag = Tag::first();
+    // dd($tag->id);
+
+    // $post= Post::with('tags')->first();
+    // $post->tags()->attach(3);
 
     /**
      * to attach a value to column
@@ -167,7 +164,7 @@ Route::get('/pivot', function () {
      * ])
      */
 
-     $post=Post::first();
+    $post = Post::first();
     //  dd($post->tags->first());
     //  $post->tags()->attach([
     //      5 => [
@@ -186,9 +183,9 @@ Route::get('/pivot', function () {
      * To show Pivot Table Realtion we will use 
      * $post =Post::first();
      * dd($post->tags);
-     */    
-        // $post =Post::first();
-        // dd($post->tags);
+     */
+    // $post =Post::first();
+    // dd($post->tags);
 
     /**
      * to return Tags through relation 
@@ -198,7 +195,7 @@ Route::get('/pivot', function () {
      * by $post->tags->first()->pivot->created_at
      *  
      */
-    
+
     //  dd($post->tags->first()->pivot->created_at);
 
     /**
@@ -209,12 +206,12 @@ Route::get('/pivot', function () {
      * $post->tags()->detach([2]);
      */
 
-        // $post= Post::first();
-        // $post->tags()->attach($tag);
+    // $post= Post::first();
+    // $post->tags()->attach($tag);
 
-    
 
-    
+
+
 
 
     /**
@@ -228,47 +225,44 @@ Route::get('/pivot', function () {
 
     // $post->tags()->detach();
     // $post->tags()->attach([2,4]);
-    
-     /**
-      * Better Approch to Update Record in Pivot is SYNC Method
-      * sync() function
-      * $post->tags()->sync([tag_id,tag_id])
-      */
 
-        // $post->tags()->sync([4,5]);
-        // $post->tags()->attach(0);
+    /**
+     * Better Approch to Update Record in Pivot is SYNC Method
+     * sync() function
+     * $post->tags()->sync([tag_id,tag_id])
+     */
+
+    // $post->tags()->sync([4,5]);
+    // $post->tags()->attach(0);
 
 
-    
-    
-    
+
+
+
 
     /**
      * we can also attach multiple tags
      * $post->tags()->attach([1,2,3,4,5]);
      */
 
-   
+
 
     /**
      * Showing Posts and Tags with User in Template
      */
-        $posts = Post::with(['user','tags'])->get();
-        
-        return view('pivot', compact('posts'));
+    $posts = Post::with(['user', 'tags'])->get();
 
-
-    
+    return view('pivot', compact('posts'));
 });
 Route::get('/usersPost', function () {
-    
-     
+
+
     /**
      * we will dislay all Users with and without Post
      * $users = User::with('post')->get();
      */
-    
-     // $users = User::with('post')->get();
+
+    // $users = User::with('post')->get();
 
     /**
      * Only Fetch Users who have some Posts
@@ -276,7 +270,7 @@ Route::get('/usersPost', function () {
      */
 
 
-     // $users = User::has('post')->with('post')->get();
+    // $users = User::has('post')->with('post')->get();
 
     /**
      * only show those who have 2 or more Posts (2=>)
@@ -317,7 +311,7 @@ Route::get('/usersPost', function () {
      */
 
 
- 
+
 
     $users = User::with('post')->get();
     // $users[0]->post()->create([
@@ -329,9 +323,7 @@ Route::get('/usersPost', function () {
 
 
 
-    return view('usersPost',compact('users'));
-
-    
+    return view('usersPost', compact('users'));
 });
 Route::get('/usersdata', function () {
     // $user = User::factory()->create();
@@ -340,9 +332,9 @@ Route::get('/usersdata', function () {
     //     'city' => 'Kolkata',
     //     'zip_code' => 1111,
     // ]);
-    
 
-  
+
+
     // $address= Address::with('user')->get(); // It shorts the SQl Query to minimum
     $users = User::with('addresses')->get();
     // $users[0]->addresses()->create([
@@ -350,39 +342,35 @@ Route::get('/usersdata', function () {
     //     'city' =>'New York',
     //     'zip_code' =>02134,
     // ]);    
-//    return view('index',compact('address'));
-return view('index',compact('users'));
-
-
-    
+    //    return view('index',compact('address'));
+    return view('index', compact('users'));
 });
 Route::get('/createtag', function () {
     Tag::create([
-        'name'=> 'Ruby On Rails'
+        'name' => 'Ruby On Rails'
     ]);
     Tag::create([
-         'name' =>'laravel',
-         ]);
-         
-         Tag::create([
-         'name' =>'php',
-         ]); 
-          
-         Tag::create([
-         'name' =>'react',
-         ]);  
-         Tag::create([
-         'name' =>'java',
-         ]);
-         
-         Tag::create([
-         'name' =>'python',
-         ]); 
-          
-         Tag::create([
-         'name' =>'Andriod',
-         ]); 
-    
+        'name' => 'laravel',
+    ]);
+
+    Tag::create([
+        'name' => 'php',
+    ]);
+
+    Tag::create([
+        'name' => 'react',
+    ]);
+    Tag::create([
+        'name' => 'java',
+    ]);
+
+    Tag::create([
+        'name' => 'python',
+    ]);
+
+    Tag::create([
+        'name' => 'Andriod',
+    ]);
 });
 
 Route::get('/post', function () {
@@ -400,24 +388,22 @@ Route::get('/post', function () {
 
 
     // Post::create([
-        
+
     //     'title' => 'Post of Guest 2 User saved without user ID'
     // ]);
     // Post::create([
-        
+
     //     'title' => 'Post of Guest 1 User saved without user ID'
     // ]);
     // $user = User::factory()->create();
     // $user->post()->create([
     //         'title' => 'Post 2 '
-            
+
     //      ]);
     $posts = Post::with('user')->get();
     // dd($posts);
-    
-    return view('posts',compact('posts'));
 
-    
+    return view('posts', compact('posts'));
 });
 
 /**
@@ -502,7 +488,7 @@ Route::get('/projects', function () {
      * return $project;
      */
     $project = Project::find(1);
-    
+
     /**
      * get me users belong to this Project
      * return $project->users;
@@ -523,17 +509,16 @@ Route::get('/projects', function () {
      */
 
     return $project->tasks;
-
 });
 
 Route::get('/pivotprojects', function () {
 
-     
+
     /**
      * here we will create and assign projects to users 
      * 
      */
-    
+
     /*
      
     $project1= Project::create([
@@ -591,7 +576,12 @@ Route::get('/pivotprojects', function () {
      * get this user project's
      */
 
-     $user = User::find(13);
-         return $user->pivot_projects;
-    
+    $user = User::find(13);
+    return $user->pivot_projects;
+
+    $user = User::find(12);
+    return $user->pivot_projects;
+
+    $user = User::find(10);
+    return $user->pivot_projects;
 });
