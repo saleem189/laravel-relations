@@ -585,3 +585,4 @@ Route::get('/pivotprojects', function () {
     $user = User::find(10);
     return $user->pivot_projects;
 });
+//adding comment
