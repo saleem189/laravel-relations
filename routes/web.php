@@ -8,6 +8,7 @@ use App\Models\Task;
 use App\Models\User;
 
 use Faker\Factory;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Mpdf\Mpdf;
@@ -25,6 +26,17 @@ use Mpdf\Mpdf;
 
 Route::get('/', function () {
     return view('welcome');
+});
+
+// Health check endpoint for Docker
+Route::get('/health', function () {
+    try {
+        // Check database connection
+        DB::connection()->getPdo();
+        return response()->json(['status' => 'healthy', 'timestamp' => now()], 200);
+    } catch (\Exception $e) {
+        return response()->json(['status' => 'unhealthy', 'error' => $e->getMessage()], 503);
+    }
 });
 
 Auth::routes();

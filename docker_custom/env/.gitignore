@@ -1,0 +1,10 @@
+# Ignore actual environment files with secrets
+# But allow template files to be committed
+.env.*
+!.env.development
+!.env.staging
+!.env.production
+!.env.testing
+!.gitignore
+!README.md
+

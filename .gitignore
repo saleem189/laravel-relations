@@ -5,6 +5,11 @@
 /vendor
 .env
 .env.backup
+.env.*
+# Allow template files in docker/env/ to be committed
+!docker/env/.env.development
+!docker/env/.env.staging
+!docker/env/.env.production
 .phpunit.result.cache
 docker-compose.override.yml
 Homestead.json

@@ -1,0 +1,52 @@
+# -----------------------------
+# 1️⃣ Composer Builder Stage
+# -----------------------------
+    FROM composer:2 AS composer_build
+    WORKDIR /app
+    COPY composer.json composer.lock ./
+    RUN composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+    COPY . .
+    RUN composer dump-autoload --optimize
+    
+    # -----------------------------
+    # 2️⃣ Node Builder Stage
+    # -----------------------------
+    FROM node:20 AS node_build
+    WORKDIR /app
+    COPY package*.json ./
+    RUN npm install --omit=dev
+    COPY . .
+    RUN npm run build
+    
+    # -----------------------------
+    # 3️⃣ Final Production Image
+    # -----------------------------
+    FROM php:8.2-fpm-alpine
+    
+    # Install required PHP extensions
+    RUN docker-php-ext-install \
+        pdo_mysql \
+        mbstring \
+        exif \
+        pcntl \
+        bcmath \
+        opcache
+    
+    # Copy application from build stages
+    WORKDIR /var/www
+    COPY --from=composer_build /app ./
+    COPY --from=node_build /app/public ./public
+    
+    # Ensure storage permissions
+    RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
+    
+    # Production PHP settings
+    RUN { \
+        echo "opcache.enable=1"; \
+        echo "opcache.enable_cli=1"; \
+        echo "opcache.memory_consumption=128"; \
+        echo "expose_php=0"; \
+    } > /usr/local/etc/php/conf.d/opcache.ini
+    
+    CMD ["php-fpm"]
+    
