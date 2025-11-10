@@ -24,8 +24,6 @@ pipeline {
                 checkout scm
                 script {
                     env.BRANCH_NAME = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'master'
-                    env.IMAGE_TAG = "${env.BRANCH_NAME}-${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
-                    env.FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.IMAGE_TAG}"
                 }
             }
         }
@@ -33,12 +31,29 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    def image = env.FULL_IMAGE_NAME
-                    echo "Building Docker image: ${image}"
-                    sh """
-docker build -t ${image} -f docker/Dockerfile .
-docker tag ${image} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+                    if (env.BRANCH_NAME == 'develop') {
+                        env.IMAGE_TAG = "staging-${env.BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
+                        env.FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.IMAGE_TAG}"
+                        echo "Building Staging Docker image: ${env.FULL_IMAGE_NAME}"
+                        sh """
+docker build -t ${env.FULL_IMAGE_NAME} -f docker/Dockerfile.prod .
+docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
 """
+                    } else if (env.BRANCH_NAME == 'master') {
+                        env.IMAGE_TAG = "prod-${env.BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
+                        env.FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.IMAGE_TAG}"
+                        echo "Building Production Docker image: ${env.FULL_IMAGE_NAME}"
+                        sh """
+docker build -t ${env.FULL_IMAGE_NAME} -f docker/Dockerfile.prod .
+docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
+"""
+                    } else {
+                        // Optional: build for other branches
+                        env.IMAGE_TAG = "${env.BRANCH_NAME}-${env.BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
+                        env.FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.IMAGE_TAG}"
+                        echo "Building Docker image for branch ${env.BRANCH_NAME}: ${env.FULL_IMAGE_NAME}"
+                        sh "docker build -t ${env.FULL_IMAGE_NAME} -f docker/Dockerfile ."
+                    }
                 }
             }
         }
@@ -48,13 +63,12 @@ docker tag ${image} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
         stage('Security Scan') {
             steps {
                 script {
-                    def image = env.FULL_IMAGE_NAME
-                    echo "Scanning Docker image for vulnerabilities: ${image}"
+                    echo "Scanning Docker image for vulnerabilities: ${env.FULL_IMAGE_NAME}"
                     sh """
 if ! command -v trivy &> /dev/null; then
     echo "Trivy not found, skipping security scan"
 else
-    trivy image --exit-code 0 --severity HIGH,CRITICAL ${image} || true
+    trivy image --exit-code 0 --severity HIGH,CRITICAL ${env.FULL_IMAGE_NAME} || true
 fi
 """
                 }
@@ -64,13 +78,16 @@ fi
         stage('Push to Registry') {
             steps {
                 script {
-                    def image = env.FULL_IMAGE_NAME
-                    echo "Pushing image to Docker Hub: ${image}"
+                    echo "Pushing Docker image: ${env.FULL_IMAGE_NAME}"
                     withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         sh """
 echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-docker push ${image}
-docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+docker push ${env.FULL_IMAGE_NAME}
+if [ "${env.BRANCH_NAME}" == "develop" ]; then
+    docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
+elif [ "${env.BRANCH_NAME}" == "master" ]; then
+    docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
+fi
 """
                     }
                 }
@@ -100,20 +117,10 @@ DEPLOY_TIMESTAMP=${timestamp}
             steps {
                 script {
                     unstash 'deployment-info'
-                    def image = env.FULL_IMAGE_NAME
-                    def branch = env.BRANCH_NAME
-                    def buildNum = env.BUILD_NUMBER
-                    def commit = env.GIT_COMMIT_SHORT
-                    def timestamp = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone('UTC'))
-
                     sh """
 echo "Deploying to Staging..."
 echo "IMAGE_TAG: ${env.IMAGE_TAG}"
-echo "FULL_IMAGE_NAME: ${image}"
-echo "BRANCH_NAME: ${branch}"
-echo "BUILD_NUMBER: ${buildNum}"
-echo "GIT_COMMIT: ${commit}"
-echo "DEPLOY_TIMESTAMP: ${timestamp}"
+echo "FULL_IMAGE_NAME: ${env.FULL_IMAGE_NAME}"
 """
                     // sshagent([SSH_CREDENTIALS_ID]) { ... }  // keep commented
                 }
@@ -126,20 +133,10 @@ echo "DEPLOY_TIMESTAMP: ${timestamp}"
                 script {
                     input message: 'Deploy to Production?', ok: 'Deploy'
                     unstash 'deployment-info'
-                    def image = env.FULL_IMAGE_NAME
-                    def branch = env.BRANCH_NAME
-                    def buildNum = env.BUILD_NUMBER
-                    def commit = env.GIT_COMMIT_SHORT
-                    def timestamp = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone('UTC'))
-
                     sh """
 echo "Deploying to Production..."
 echo "IMAGE_TAG: ${env.IMAGE_TAG}"
-echo "FULL_IMAGE_NAME: ${image}"
-echo "BRANCH_NAME: ${branch}"
-echo "BUILD_NUMBER: ${buildNum}"
-echo "GIT_COMMIT: ${commit}"
-echo "DEPLOY_TIMESTAMP: ${timestamp}"
+echo "FULL_IMAGE_NAME: ${env.FULL_IMAGE_NAME}"
 """
                     // sshagent([SSH_CREDENTIALS_ID]) { ... }  // keep commented
                 }
