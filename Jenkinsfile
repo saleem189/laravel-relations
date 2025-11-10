@@ -104,18 +104,21 @@ pipeline {
         stage('Stash Deployment Info') {
             steps {
                 script {
+                    def deployTime = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone('UTC'))
+
                     writeFile file: 'deployment-info.txt', text: """
-IMAGE_TAG=${env.IMAGE_TAG}
-FULL_IMAGE_NAME=${env.FULL_IMAGE_NAME}
-BRANCH_NAME=${env.BRANCH_NAME}
-BUILD_NUMBER=${env.BUILD_NUMBER}
-GIT_COMMIT=${env.GIT_COMMIT_SHORT}
-DEPLOY_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-"""
+                    IMAGE_TAG=${env.IMAGE_TAG}
+                    FULL_IMAGE_NAME=${env.FULL_IMAGE_NAME}
+                    BRANCH_NAME=${env.BRANCH_NAME}
+                    BUILD_NUMBER=${env.BUILD_NUMBER}
+                    GIT_COMMIT=${env.GIT_COMMIT_SHORT}
+                    DEPLOY_TIMESTAMP=${deployTime}
+                    """
                     stash includes: 'deployment-info.txt', name: 'deployment-info'
                 }
             }
         }
+
         
         stage('Deploy to Staging') {
             when {
