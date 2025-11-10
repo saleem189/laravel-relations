@@ -42,9 +42,11 @@
         libjpeg-turbo-dev \
         libpng-dev \
         libzip-dev \
+        oniguruma-dev \
         zip \
         && docker-php-ext-configure gd --with-freetype --with-jpeg \
         && docker-php-ext-install gd pdo_mysql mbstring exif pcntl bcmath opcache zip
+
     
     WORKDIR /var/www
     COPY --from=composer_build /app ./
