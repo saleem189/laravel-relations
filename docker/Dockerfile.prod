@@ -10,6 +10,8 @@
         libpng-dev \
         libzip-dev \
         zip \
+        oniguruma-dev \
+        pkgconfig \
         && docker-php-ext-configure gd --with-freetype --with-jpeg \
         && docker-php-ext-install gd pdo_mysql mbstring exif pcntl bcmath opcache zip
     
@@ -24,10 +26,9 @@
     # -----------------------------
     FROM node:20 AS node_build
     WORKDIR /app
-    # Set NODE_OPTIONS for OpenSSL compatibility with older webpack
     ENV NODE_OPTIONS=--openssl-legacy-provider
     COPY package*.json ./
-    RUN npm ci || npm install
+    RUN npm ci
     COPY . .
     RUN npm run production
     
@@ -47,8 +48,6 @@
         zip \
         && docker-php-ext-configure gd --with-freetype --with-jpeg \
         && docker-php-ext-install gd pdo_mysql mbstring exif pcntl bcmath opcache zip
-
-
     
     WORKDIR /var/www
     COPY --from=composer_build /app ./
@@ -64,6 +63,9 @@
         echo "opcache.memory_consumption=128"; \
         echo "expose_php=0"; \
     } > /usr/local/etc/php/conf.d/opcache.ini
+    
+    # Expose PHP-FPM port for Nginx
+    EXPOSE 9000
     
     CMD ["php-fpm"]
     
