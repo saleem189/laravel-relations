@@ -1,25 +1,32 @@
 pipeline {
     agent any
-    
+
     environment {
         DOCKER_REGISTRY = 'devsaleem'
         DOCKER_IMAGE = 'laravel-relations'
         DOCKER_CREDENTIALS_ID = 'docker-registry-credentials'
         SSH_CREDENTIALS_ID = 'ssh-deploy-credentials'
-        DEPLOY_HOST = credentials('deploy-host')
-        DEPLOY_USER = credentials('deploy-user')
         DEPLOY_PATH = '/opt/laravel-relations'
-        GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
 
-    
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
         timeout(time: 60, unit: 'MINUTES')
         timestamps()
     }
-    
+
     stages {
+        stage('Prepare Environment') {
+            steps {
+                script {
+                    // Set dynamic values here
+                    env.DEPLOY_HOST = credentials('deploy-host')
+                    env.DEPLOY_USER = credentials('deploy-user')
+                    env.GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
                 checkout scm
@@ -30,7 +37,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Build Docker Image') {
             steps {
                 script {
@@ -43,12 +50,11 @@ docker tag ${image} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
                 }
             }
         }
-        
+
         // stage('Run Tests') {
         //     steps {
         //         script {
         //             echo "Running tests in Docker container..."
-        //             // Check if .env.testing exists, if not use a basic test config
         //             def testEnvFile = 'docker/env/.env.testing'
         //             def envFileFlag = fileExists(testEnvFile) ? "--env-file ${testEnvFile}" : ''
         //             def image = env.FULL_IMAGE_NAME
@@ -72,7 +78,7 @@ docker tag ${image} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
         //         }
         //     }
         // }
-        
+
         stage('Security Scan') {
             steps {
                 script {
@@ -88,7 +94,7 @@ fi
                 }
             }
         }
-        
+
         stage('Push to Registry') {
             steps {
                 script {
@@ -104,7 +110,7 @@ docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
                 }
             }
         }
-        
+
         stage('Stash Deployment Info') {
             steps {
                 script {
@@ -122,7 +128,7 @@ DEPLOY_TIMESTAMP=${timestamp}
                 }
             }
         }
-        
+
         stage('Deploy to Staging') {
             when { branch 'develop' }
             steps {
@@ -144,43 +150,11 @@ echo "GIT_COMMIT: ${commit}"
 echo "DEPLOY_TIMESTAMP: ${timestamp}"
 """
 
-                    // sshagent([SSH_CREDENTIALS_ID]) {
-                    //     withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    //         sh """
-                    // ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
-                    //     set -e
-                    //     cd ${DEPLOY_PATH}
-                        
-                    //     # Pull latest image
-                    //     echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                    //     docker pull ${image}
-                        
-                    //     # Update environment
-                    //     export IMAGE_TAG=${env.IMAGE_TAG}
-                    //     export DOCKER_REGISTRY=${DOCKER_REGISTRY}
-                        
-                    //     # Deploy
-                    //     docker compose -f docker/compose/docker-compose.staging.yml up -d --no-build
-                        
-                    //     # Run migrations
-                    //     docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan migrate --force || true
-                        
-                    //     # Clear caches
-                    //     docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan config:cache
-                    //     docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan route:cache
-                    //     docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan view:cache
-                        
-                    //     # Health check
-                    //     sleep 10
-                    //     docker compose -f docker/compose/docker-compose.staging.yml ps
-                    // EOF
-                    //         """
-                    //     }
-                    // }
+                    // sshagent([SSH_CREDENTIALS_ID]) { ... commented original deploy steps ... }
                 }
             }
         }
-        
+
         stage('Deploy to Production') {
             when { branch 'master' }
             steps {
@@ -204,54 +178,12 @@ echo "GIT_COMMIT: ${commit}"
 echo "DEPLOY_TIMESTAMP: ${timestamp}"
 """
 
-                    // sshagent([SSH_CREDENTIALS_ID]) {
-                    //     withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    //         sh """
-                    // ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
-                    //     set -e
-                    //     cd ${DEPLOY_PATH}
-                        
-                    //     # Pull latest image
-                    //     echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                    //     docker pull ${image}
-                        
-                    //     # Backup current deployment
-                    //     docker compose -f docker/compose/docker-compose.production.yml ps > deployment-backup-\$(date +%Y%m%d-%H%M%S).txt || true
-                        
-                    //     # Update environment
-                    //     export IMAGE_TAG=${env.IMAGE_TAG}
-                    //     export DOCKER_REGISTRY=${DOCKER_REGISTRY}
-                        
-                    //     # Deploy
-                    //     docker compose -f docker/compose/docker-compose.production.yml up -d --no-build
-                        
-                    //     # Run migrations
-                    //     docker compose -f docker/compose/docker-compose.production.yml exec -T app php artisan migrate --force || true
-                        
-                    //     # Clear caches
-                    //     docker compose -f docker/compose/docker-compose.production.yml exec -T app php artisan config:cache
-                    //     docker compose -f docker/compose/docker-compose.production.yml exec -T app php artisan route:cache
-                    //     docker compose -f docker/compose/docker-compose.production.yml exec -T app php artisan view:cache
-                        
-                    //     # Health check
-                    //     sleep 10
-                    //     docker compose -f docker/compose/docker-compose.production.yml ps
-                        
-                    //     # Cleanup old images (keep last 5)
-                    //     docker images ${DOCKER_REGISTRY}/${DOCKER_IMAGE} --format "{{.Tag}}" | \\
-                    //         grep -E "^${branch}-" | \\
-                    //         sort -V | \\
-                    //         head -n -5 | \\
-                    //         xargs -r -I {} docker rmi ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:{} || true
-                    // EOF
-                    //         """
-                    //     }
-                    // }
+                    // sshagent([SSH_CREDENTIALS_ID]) { ... commented original deploy steps ... }
                 }
             }
         }
     }
-    
+
     post {
         success {
             echo "Pipeline succeeded! Image: ${env.FULL_IMAGE_NAME}"
@@ -260,7 +192,7 @@ echo "DEPLOY_TIMESTAMP: ${timestamp}"
             echo "Pipeline failed! Check logs for details."
         }
         always {
-            script {
+            node {
                 sh """
 docker system prune -f || true
 """
