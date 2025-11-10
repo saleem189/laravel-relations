@@ -192,7 +192,7 @@ echo "DEPLOY_TIMESTAMP: ${timestamp}"
             echo "Pipeline failed! Check logs for details."
         }
         always {
-            node {
+            always {
                 sh """
 docker system prune -f || true
 """
