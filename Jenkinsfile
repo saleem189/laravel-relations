@@ -1,12 +1,20 @@
 pipeline {
-    agent any
-
+    agent {
+        docker {
+            image 'docker:24-dind'   // Docker-in-Docker image
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
+    
     environment {
         DOCKER_REGISTRY = 'devsaleem'
         DOCKER_IMAGE = 'laravel-relations'
         DOCKER_CREDENTIALS_ID = 'docker-registry-credentials'
         SSH_CREDENTIALS_ID = 'ssh-deploy-credentials'
+        DEPLOY_HOST = credentials('deploy-host')
+        DEPLOY_USER = credentials('deploy-user')
         DEPLOY_PATH = '/opt/laravel-relations'
+        GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
 
     options {
@@ -14,19 +22,8 @@ pipeline {
         timeout(time: 60, unit: 'MINUTES')
         timestamps()
     }
-
+    
     stages {
-        stage('Prepare Environment') {
-            steps {
-                script {
-                    // Set dynamic values here
-                    env.DEPLOY_HOST = credentials('deploy-host')
-                    env.DEPLOY_USER = credentials('deploy-user')
-                    env.GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-                }
-            }
-        }
-
         stage('Checkout') {
             steps {
                 checkout scm
@@ -37,7 +34,7 @@ pipeline {
                 }
             }
         }
-
+        
         stage('Build Docker Image') {
             steps {
                 script {
@@ -51,34 +48,8 @@ docker tag ${image} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
             }
         }
 
-        // stage('Run Tests') {
-        //     steps {
-        //         script {
-        //             echo "Running tests in Docker container..."
-        //             def testEnvFile = 'docker/env/.env.testing'
-        //             def envFileFlag = fileExists(testEnvFile) ? "--env-file ${testEnvFile}" : ''
-        //             def image = env.FULL_IMAGE_NAME
-        //             sh """
-        // docker run --rm \\
-        //     ${envFileFlag} \\
-        //     -e DB_HOST=db \\
-        //     -e DB_DATABASE=laravel_test \\
-        //     -e DB_USERNAME=laravel_test \\
-        //     -e DB_PASSWORD=laravel_test_password \\
-        //     -e REDIS_HOST=redis \\
-        //     -v \$(pwd)/tests:/var/www/html/tests:ro \\
-        //     ${image} \\
-        //     php artisan test
-        // """
-        //         }
-        //     }
-        //     post {
-        //         always {
-        //             junit 'tests/results/*.xml'
-        //         }
-        //     }
-        // }
-
+        // stage('Run Tests') { ... }  // Keep commented as-is
+        
         stage('Security Scan') {
             steps {
                 script {
@@ -94,7 +65,7 @@ fi
                 }
             }
         }
-
+        
         stage('Push to Registry') {
             steps {
                 script {
@@ -110,7 +81,7 @@ docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
                 }
             }
         }
-
+        
         stage('Stash Deployment Info') {
             steps {
                 script {
@@ -128,7 +99,7 @@ DEPLOY_TIMESTAMP=${timestamp}
                 }
             }
         }
-
+        
         stage('Deploy to Staging') {
             when { branch 'develop' }
             steps {
@@ -149,19 +120,17 @@ echo "BUILD_NUMBER: ${buildNum}"
 echo "GIT_COMMIT: ${commit}"
 echo "DEPLOY_TIMESTAMP: ${timestamp}"
 """
-
-                    // sshagent([SSH_CREDENTIALS_ID]) { ... commented original deploy steps ... }
+                    // sshagent([SSH_CREDENTIALS_ID]) { ... }  // keep commented
                 }
             }
         }
-
+        
         stage('Deploy to Production') {
             when { branch 'master' }
             steps {
                 script {
                     input message: 'Deploy to Production?', ok: 'Deploy'
                     unstash 'deployment-info'
-
                     def image = env.FULL_IMAGE_NAME
                     def branch = env.BRANCH_NAME
                     def buildNum = env.BUILD_NUMBER
@@ -177,13 +146,12 @@ echo "BUILD_NUMBER: ${buildNum}"
 echo "GIT_COMMIT: ${commit}"
 echo "DEPLOY_TIMESTAMP: ${timestamp}"
 """
-
-                    // sshagent([SSH_CREDENTIALS_ID]) { ... commented original deploy steps ... }
+                    // sshagent([SSH_CREDENTIALS_ID]) { ... }  // keep commented
                 }
             }
         }
     }
-
+    
     post {
         success {
             echo "Pipeline succeeded! Image: ${env.FULL_IMAGE_NAME}"
@@ -192,10 +160,8 @@ echo "DEPLOY_TIMESTAMP: ${timestamp}"
             echo "Pipeline failed! Check logs for details."
         }
         always {
-            always {
-                sh """
-docker system prune -f || true
-"""
+            script {
+                sh "docker system prune -f || true"
             }
         }
     }
