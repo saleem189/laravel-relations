@@ -6,8 +6,8 @@ pipeline {
         DOCKER_IMAGE = 'laravel-realtions'
         DOCKER_CREDENTIALS_ID = 'docker-registry-credentials'
         SSH_CREDENTIALS_ID = 'ssh-deploy-credentials'
-        DEPLOY_HOST = credentials('deploy-host') ?: 'your-deploy-host'
-        DEPLOY_USER = credentials('deploy-user') ?: 'deploy'
+        DEPLOY_HOST = credentials('deploy-host') ?: 'localhost'
+        DEPLOY_USER = credentials('deploy-user') ?: 'saleem'
         DEPLOY_PATH = '/opt/laravel-relations'
         GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
