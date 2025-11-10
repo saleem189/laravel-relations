@@ -27,7 +27,7 @@
     COPY package*.json ./
     RUN npm install --omit=dev
     COPY . .
-    RUN npm run build
+    RUN npm run production
     
     # -----------------------------
     # 3️⃣ Final Production Image
