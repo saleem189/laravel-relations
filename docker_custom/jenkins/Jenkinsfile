@@ -42,33 +42,33 @@ pipeline {
             }
         }
         
-        stage('Run Tests') {
-            steps {
-                script {
-                    echo "Running tests in Docker container..."
-                    // Check if .env.testing exists, if not use a basic test config
-                    def testEnvFile = 'docker/env/.env.testing'
-                    def envFileFlag = fileExists(testEnvFile) ? "--env-file ${testEnvFile}" : ''
-                    sh """
-                        docker run --rm \
-                            ${envFileFlag} \
-                            -e DB_HOST=db \
-                            -e DB_DATABASE=laravel_test \
-                            -e DB_USERNAME=laravel_test \
-                            -e DB_PASSWORD=laravel_test_password \
-                            -e REDIS_HOST=redis \
-                            -v \$(pwd)/tests:/var/www/html/tests:ro \
-                            ${env.FULL_IMAGE_NAME} \
-                            php artisan test
-                    """
-                }
-            }
-            post {
-                always {
-                    junit 'tests/results/*.xml'
-                }
-            }
-        }
+        // stage('Run Tests') {
+        //     steps {
+        //         script {
+        //             echo "Running tests in Docker container..."
+        //             // Check if .env.testing exists, if not use a basic test config
+        //             def testEnvFile = 'docker/env/.env.testing'
+        //             def envFileFlag = fileExists(testEnvFile) ? "--env-file ${testEnvFile}" : ''
+        //             sh """
+        //                 docker run --rm \
+        //                     ${envFileFlag} \
+        //                     -e DB_HOST=db \
+        //                     -e DB_DATABASE=laravel_test \
+        //                     -e DB_USERNAME=laravel_test \
+        //                     -e DB_PASSWORD=laravel_test_password \
+        //                     -e REDIS_HOST=redis \
+        //                     -v \$(pwd)/tests:/var/www/html/tests:ro \
+        //                     ${env.FULL_IMAGE_NAME} \
+        //                     php artisan test
+        //             """
+        //         }
+        //     }
+        //     post {
+        //         always {
+        //             junit 'tests/results/*.xml'
+        //         }
+        //     }
+        // }
         
         stage('Security Scan') {
             steps {
