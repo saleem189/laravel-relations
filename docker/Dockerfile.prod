@@ -24,8 +24,10 @@
     # -----------------------------
     FROM node:20 AS node_build
     WORKDIR /app
+    # Set NODE_OPTIONS for OpenSSL compatibility with older webpack
+    ENV NODE_OPTIONS=--openssl-legacy-provider
     COPY package*.json ./
-    RUN npm install --omit=dev
+    RUN npm ci || npm install
     COPY . .
     RUN npm run production
     
