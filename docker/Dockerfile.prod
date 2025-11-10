@@ -43,9 +43,11 @@
         libpng-dev \
         libzip-dev \
         oniguruma-dev \
+        pkgconfig \
         zip \
         && docker-php-ext-configure gd --with-freetype --with-jpeg \
         && docker-php-ext-install gd pdo_mysql mbstring exif pcntl bcmath opcache zip
+
 
     
     WORKDIR /var/www
