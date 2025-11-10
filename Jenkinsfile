@@ -153,7 +153,11 @@ echo "FULL_IMAGE_NAME: ${env.FULL_IMAGE_NAME}"
         }
         always {
             script {
-                sh "docker system prune -f || true"
+                // Remove only the images built by this pipeline
+                sh """
+                    docker rmi -f ${env.FULL_IMAGE_NAME} || true
+                    docker rmi -f ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest || true
+                """
             }
         }
     }

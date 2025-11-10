@@ -1,7 +1,18 @@
 # -----------------------------
 # 1️⃣ Composer Builder Stage
 # -----------------------------
-    FROM composer:2 AS composer_build
+    FROM php:8.2-cli-alpine AS composer_build
+
+    # Install PHP extensions required by your app
+    RUN apk add --no-cache \
+        freetype-dev \
+        libjpeg-turbo-dev \
+        libpng-dev \
+        libzip-dev \
+        zip \
+        && docker-php-ext-configure gd --with-freetype --with-jpeg \
+        && docker-php-ext-install gd pdo_mysql mbstring exif pcntl bcmath opcache zip
+    
     WORKDIR /app
     COPY composer.json composer.lock ./
     RUN composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
@@ -24,15 +35,15 @@
     FROM php:8.2-fpm-alpine
     
     # Install required PHP extensions
-    RUN docker-php-ext-install \
-        pdo_mysql \
-        mbstring \
-        exif \
-        pcntl \
-        bcmath \
-        opcache
+    RUN apk add --no-cache \
+        freetype-dev \
+        libjpeg-turbo-dev \
+        libpng-dev \
+        libzip-dev \
+        zip \
+        && docker-php-ext-configure gd --with-freetype --with-jpeg \
+        && docker-php-ext-install gd pdo_mysql mbstring exif pcntl bcmath opcache zip
     
-    # Copy application from build stages
     WORKDIR /var/www
     COPY --from=composer_build /app ./
     COPY --from=node_build /app/public ./public
