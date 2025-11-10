@@ -12,14 +12,20 @@
         zip \
         oniguruma-dev \
         pkgconfig \
+        bash \
+        curl \
         && docker-php-ext-configure gd --with-freetype --with-jpeg \
         && docker-php-ext-install gd pdo_mysql mbstring exif pcntl bcmath opcache zip
+    
+    # Install Composer
+    RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     
     WORKDIR /app
     COPY composer.json composer.lock ./
     RUN composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
     COPY . .
     RUN composer dump-autoload --optimize
+    
     
     # -----------------------------
     # 2️⃣ Node Builder Stage
