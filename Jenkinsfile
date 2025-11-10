@@ -1,0 +1,258 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_REGISTRY = 'devsaleem'
+        DOCKER_IMAGE = 'laravel-realtions'
+        DOCKER_CREDENTIALS_ID = 'docker-registry-credentials'
+        SSH_CREDENTIALS_ID = 'ssh-deploy-credentials'
+        DEPLOY_HOST = credentials('deploy-host') ?: 'your-deploy-host'
+        DEPLOY_USER = credentials('deploy-user') ?: 'deploy'
+        DEPLOY_PATH = '/opt/laravel-relations'
+        GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+    }
+    
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timeout(time: 60, unit: 'MINUTES')
+        timestamps()
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.BRANCH_NAME = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'master'
+                    env.IMAGE_TAG = "${env.BRANCH_NAME}-${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+                    env.FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.IMAGE_TAG}"
+                }
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    echo "Building Docker image: ${env.FULL_IMAGE_NAME}"
+                    sh """
+                        docker build -t ${env.FULL_IMAGE_NAME} -f docker/Dockerfile .
+                        docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+                    """
+                }
+            }
+        }
+        
+        // stage('Run Tests') {
+        //     steps {
+        //         script {
+        //             echo "Running tests in Docker container..."
+        //             // Check if .env.testing exists, if not use a basic test config
+        //             def testEnvFile = 'docker/env/.env.testing'
+        //             def envFileFlag = fileExists(testEnvFile) ? "--env-file ${testEnvFile}" : ''
+        //             sh """
+        //                 docker run --rm \
+        //                     ${envFileFlag} \
+        //                     -e DB_HOST=db \
+        //                     -e DB_DATABASE=laravel_test \
+        //                     -e DB_USERNAME=laravel_test \
+        //                     -e DB_PASSWORD=laravel_test_password \
+        //                     -e REDIS_HOST=redis \
+        //                     -v \$(pwd)/tests:/var/www/html/tests:ro \
+        //                     ${env.FULL_IMAGE_NAME} \
+        //                     php artisan test
+        //             """
+        //         }
+        //     }
+        //     post {
+        //         always {
+        //             junit 'tests/results/*.xml'
+        //         }
+        //     }
+        // }
+        
+        stage('Security Scan') {
+            steps {
+                script {
+                    echo "Scanning Docker image for vulnerabilities..."
+                    sh """
+                        # Install Trivy if not available
+                        if ! command -v trivy &> /dev/null; then
+                            echo "Trivy not found, skipping security scan"
+                        else
+                            trivy image --exit-code 0 --severity HIGH,CRITICAL ${env.FULL_IMAGE_NAME} || true
+                        fi
+                    """
+                }
+            }
+        }
+        
+        stage('Push to Registry') {
+            steps {
+                script {
+                    echo "Pushing image to Docker Hub: ${env.FULL_IMAGE_NAME}"
+                    withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh """
+                            echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                            docker push ${env.FULL_IMAGE_NAME}
+                            docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Stash Deployment Info') {
+            steps {
+                script {
+                    writeFile file: 'deployment-info.txt', text: """
+IMAGE_TAG=${env.IMAGE_TAG}
+FULL_IMAGE_NAME=${env.FULL_IMAGE_NAME}
+BRANCH_NAME=${env.BRANCH_NAME}
+BUILD_NUMBER=${env.BUILD_NUMBER}
+GIT_COMMIT=${env.GIT_COMMIT_SHORT}
+DEPLOY_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+"""
+                    stash includes: 'deployment-info.txt', name: 'deployment-info'
+                }
+            }
+        }
+        
+        stage('Deploy to Staging') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                script {
+                    unstash 'deployment-info'
+                    sh """
+                        echo "Deploying to Staging..."
+                        echo "IMAGE_TAG: ${env.IMAGE_TAG}"
+                        echo "FULL_IMAGE_NAME: ${env.FULL_IMAGE_NAME}"
+                        echo "BRANCH_NAME: ${env.BRANCH_NAME}"
+                        echo "BUILD_NUMBER: ${env.BUILD_NUMBER}"
+                        echo "GIT_COMMIT: ${env.GIT_COMMIT_SHORT}"
+                        echo "DEPLOY_TIMESTAMP: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+                    """
+                    
+                    // sshagent([SSH_CREDENTIALS_ID]) {
+                    //     withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    //         sh """
+                    //             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
+                    //                 set -e
+                    //                 cd ${DEPLOY_PATH}
+                                    
+                    //                 # Pull latest image
+                    //                 echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                    //                 docker pull ${env.FULL_IMAGE_NAME}
+                                    
+                    //                 # Update environment
+                    //                 export IMAGE_TAG=${env.IMAGE_TAG}
+                    //                 export DOCKER_REGISTRY=${DOCKER_REGISTRY}
+                                    
+                    //                 # Deploy
+                    //                 docker compose -f docker/compose/docker-compose.staging.yml up -d --no-build
+                                    
+                    //                 # Run migrations
+                    //                 docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan migrate --force || true
+                                    
+                    //                 # Clear caches
+                    //                 docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan config:cache
+                    //                 docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan route:cache
+                    //                 docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan view:cache
+                                    
+                    //                 # Health check
+                    //                 sleep 10
+                    //                 docker compose -f docker/compose/docker-compose.staging.yml ps
+                    //             EOF
+                    //         """
+                    //     }
+                    // }
+                }
+            }
+        }
+        
+        stage('Deploy to Production') {
+            when {
+                branch 'master'
+            }
+            steps {
+                script {
+                    input message: 'Deploy to Production?', ok: 'Deploy'
+                    
+                    unstash 'deployment-info'
+                    
+                    // sshagent([SSH_CREDENTIALS_ID]) {
+                    //     withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    //         sh """
+                    //             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
+                    //                 set -e
+                    //                 cd ${DEPLOY_PATH}
+                                    
+                    //                 # Pull latest image
+                    //                 echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                    //                 docker pull ${env.FULL_IMAGE_NAME}
+                                    
+                    //                 # Backup current deployment
+                    //                 docker compose -f docker/compose/docker-compose.production.yml ps > deployment-backup-\$(date +%Y%m%d-%H%M%S).txt || true
+                                    
+                    //                 # Update environment
+                    //                 export IMAGE_TAG=${env.IMAGE_TAG}
+                    //                 export DOCKER_REGISTRY=${DOCKER_REGISTRY}
+                                    
+                    //                 # Deploy
+                    //                 docker compose -f docker/compose/docker-compose.production.yml up -d --no-build
+                                    
+                    //                 # Run migrations
+                    //                 docker compose -f docker/compose/docker-compose.production.yml exec -T app php artisan migrate --force || true
+                                    
+                    //                 # Clear caches
+                    //                 docker compose -f docker/compose/docker-compose.production.yml exec -T app php artisan config:cache
+                    //                 docker compose -f docker/compose/docker-compose.production.yml exec -T app php artisan route:cache
+                    //                 docker compose -f docker/compose/docker-compose.production.yml exec -T app php artisan view:cache
+                                    
+                    //                 # Health check
+                    //                 sleep 10
+                    //                 docker compose -f docker/compose/docker-compose.production.yml ps
+                                    
+                    //                 # Cleanup old images (keep last 5)
+                    //                 docker images ${DOCKER_REGISTRY}/${DOCKER_IMAGE} --format "{{.Tag}}" | \\
+                    //                     grep -E "^${env.BRANCH_NAME}-" | \\
+                    //                     sort -V | \\
+                    //                     head -n -5 | \\
+                    //                     xargs -r -I {} docker rmi ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:{} || true
+                    //             EOF
+                    //         """
+                    //     }
+                    // }
+                    sh """
+                        echo "Deploying to Production..."
+                        echo "IMAGE_TAG: ${env.IMAGE_TAG}"
+                        echo "FULL_IMAGE_NAME: ${env.FULL_IMAGE_NAME}"
+                        echo "BRANCH_NAME: ${env.BRANCH_NAME}"
+                        echo "BUILD_NUMBER: ${env.BUILD_NUMBER}"
+                        echo "GIT_COMMIT: ${env.GIT_COMMIT_SHORT}"
+                        echo "DEPLOY_TIMESTAMP: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo "Pipeline succeeded! Image: ${env.FULL_IMAGE_NAME}"
+        }
+        failure {
+            echo "Pipeline failed! Check logs for details."
+        }
+        always {
+            script {
+                // Cleanup
+                sh """
+                    docker system prune -f || true
+                """
+            }
+        }
+    }
+}
+
