@@ -3,14 +3,15 @@ pipeline {
     
     environment {
         DOCKER_REGISTRY = 'devsaleem'
-        DOCKER_IMAGE = 'laravel-realtions'
+        DOCKER_IMAGE = 'laravel-relations'
         DOCKER_CREDENTIALS_ID = 'docker-registry-credentials'
         SSH_CREDENTIALS_ID = 'ssh-deploy-credentials'
-        DEPLOY_HOST = credentials('deploy-host') ?: 'your-deploy-host'
-        DEPLOY_USER = credentials('deploy-user') ?: 'deploy'
+        DEPLOY_HOST = credentials('deploy-host')
+        DEPLOY_USER = credentials('deploy-user')
         DEPLOY_PATH = '/opt/laravel-relations'
         GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
+
     
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
