@@ -1,82 +1,96 @@
 # ========================
-# Stage 1: Build Dependencies
+# Stage 1: Builder
 # ========================
 FROM php:8.2-fpm AS builder
 
-# Set working directory
 WORKDIR /var/www/html
 
-# Install system dependencies
+# Install system dependencies for PHP extensions and npm builds
 RUN apt-get update && apt-get install -y \
     git \
-    unzip \
+    curl \
     zip \
-    libzip-dev \
-    libonig-dev \
+    unzip \
     libpng-dev \
     libjpeg-dev \
     libfreetype6-dev \
-    libpq-dev \
-    curl \
-    npm \
-    && docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd zip \
+    libonig-dev \
+    libzip-dev \
+    libicu-dev \
+    python3 \
+    make \
+    g++ \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Composer
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+# Install modern Node.js (Node 20)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
+
+# Configure PHP extensions
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) \
+        gd \
+        pdo \
+        pdo_mysql \
+        mbstring \
+        exif \
+        pcntl \
+        bcmath \
+        opcache \
+        zip \
+        intl
 
 # ------------------------
-# PHP Dependencies Layer
+# Composer dependencies caching
 # ------------------------
-# Copy only composer files to leverage Docker cache
 COPY composer.json composer.lock ./
-
-# Install PHP dependencies, skip scripts for now
-RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-scripts
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+RUN composer install --no-dev --optimize-autoloader --prefer-dist --no-scripts
 
 # ------------------------
-# Frontend Dependencies Layer
+# Node dependencies caching
 # ------------------------
-# Copy package files for npm
 COPY package*.json ./
-
-# Install node modules
 RUN npm ci --silent
 
-# ========================
-# Stage 2: Copy App & Build
-# ========================
-# Copy the rest of the application
+# ------------------------
+# Copy full app code
+# ------------------------
 COPY . .
 
-# Run Laravel post-install scripts (package discovery)
+# Run post-install scripts
 RUN php artisan package:discover --ansi
 
-# Build frontend assets (Vite/Mix)
-RUN npm run build
+# Build frontend assets
+RUN npm run production
 
-# Cache Laravel config/routes/views (optional, production ready)
+# Cache Laravel config/routes/views
 RUN php artisan config:cache \
     && php artisan route:cache \
     && php artisan view:cache
 
 # ========================
-# Stage 3: Final Production Image
+# Stage 2: Production
 # ========================
-FROM php:8.2-fpm
+FROM php:8.2-fpm-alpine AS production
 
 WORKDIR /var/www/html
 
-# Copy built app and dependencies from builder
+# Copy PHP extensions from builder
+COPY --from=builder /usr/local/lib/php/extensions/ /usr/local/lib/php/extensions/
+COPY --from=builder /usr/local/etc/php/ /usr/local/etc/php/
+
+# Copy app code and vendor from builder
 COPY --from=builder /var/www/html /var/www/html
+
+# Copy Composer for maintenance/artisan tasks
 COPY --from=builder /usr/bin/composer /usr/bin/composer
-COPY --from=builder /usr/local/lib/php/extensions /usr/local/lib/php/extensions
 
-# Set permissions for Laravel
-RUN chown -R www-data:www-data storage bootstrap/cache
+# Set Laravel-specific permissions
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Expose port for php-fpm
+# Expose PHP-FPM port
 EXPOSE 9000
 
-# Start php-fpm
+# Run PHP-FPM
 CMD ["php-fpm"]
