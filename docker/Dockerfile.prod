@@ -19,10 +19,10 @@ RUN apt-get update && apt-get install -y \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install gd intl pdo pdo_mysql mbstring exif pcntl bcmath opcache zip
 
-# Copy composer files first (caching layer)
+# Copy composer files first (for caching layer)
 COPY composer.json composer.lock ./
 
-# Copy artisan to avoid errors during post-autoload-dump
+# Copy artisan to avoid post-autoload-dump errors
 COPY artisan ./
 
 # Install PHP dependencies (no-dev for production)
@@ -41,43 +41,34 @@ FROM node:20 AS node_build
 
 WORKDIR /app
 
-# Copy only package files for caching
 COPY package*.json ./
-
-# Install Node dependencies
 RUN npm ci --legacy-peer-deps
 
-# Copy the rest of frontend code
 COPY . .
-
-# Build assets
 RUN npm run production || echo "No frontend build step"
 
 # =========================
 # 3️⃣ Final Production Image
 # =========================
-FROM php:8.2-fpm-alpine
+FROM php:8.2-fpm
 
 # Install system dependencies
-RUN apk add --no-cache \
-        bash \
+RUN apt-get update && apt-get install -y \
+        libpng-dev \
+        libjpeg-dev \
+        libfreetype6-dev \
+        oniguruma-dev \
+        libzip-dev \
         zip \
         unzip \
         git \
         curl \
-        libpng-dev \
-        libjpeg-turbo-dev \
-        freetype-dev \
-        oniguruma-dev \
-        libxml2-dev \
-        icu-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install gd intl pdo pdo_mysql mbstring exif pcntl bcmath opcache zip
 
-# Set working directory
 WORKDIR /var/www
 
-# Copy application source code (after dependencies)
+# Copy application source code and vendor
 COPY --from=composer_build /var/www ./
 
 # Copy built frontend assets
