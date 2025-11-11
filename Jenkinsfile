@@ -1,6 +1,6 @@
 pipeline {
     agent any
-    
+
     environment {
         DOCKER_REGISTRY = 'devsaleem'
         DOCKER_IMAGE = 'laravel-relations'
@@ -9,6 +9,8 @@ pipeline {
         DEPLOY_HOST = credentials('deploy-host')
         DEPLOY_USER = credentials('deploy-user')
         DEPLOY_PATH = '/opt/laravel-relations'
+        STAGGING_DEPLOY_PATH = '/opt/laravel-relations'
+        PRODUCTION_DEPLOY_PATH = '/opt/laravel-relations'
         GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
 
@@ -17,7 +19,7 @@ pipeline {
         timeout(time: 60, unit: 'MINUTES')
         timestamps()
     }
-    
+
     stages {
         stage('Checkout') {
             steps {
@@ -27,54 +29,49 @@ pipeline {
                 }
             }
         }
-        
-        stage('Build Docker Image') {
+
+        stage('Build Docker Image with Cache') {
             steps {
                 script {
                     if (env.BRANCH_NAME == 'develop') {
                         env.IMAGE_TAG = "staging-${env.BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
                         env.FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.IMAGE_TAG}"
-                        echo "Building Staging Docker image: ${env.FULL_IMAGE_NAME}"
-                        sh """
-docker build -t ${env.FULL_IMAGE_NAME} -f docker/Dockerfile.prod .
-docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
-"""
+                        env.CACHE_IMAGE = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest"
                     } else if (env.BRANCH_NAME == 'master') {
                         env.IMAGE_TAG = "prod-${env.BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
                         env.FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.IMAGE_TAG}"
-                        echo "Building Production Docker image: ${env.FULL_IMAGE_NAME}"
-                        sh """
-docker build -t ${env.FULL_IMAGE_NAME} -f docker/Dockerfile.prod .
-docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
-"""
+                        env.CACHE_IMAGE = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest"
                     } else {
-                        // Optional: build for other branches
                         env.IMAGE_TAG = "${env.BRANCH_NAME}-${env.BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
                         env.FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.IMAGE_TAG}"
-                        echo "Building Docker image for branch ${env.BRANCH_NAME}: ${env.FULL_IMAGE_NAME}"
-                        sh "docker build -t ${env.FULL_IMAGE_NAME} -f docker/Dockerfile ."
+                        env.CACHE_IMAGE = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest"
                     }
-                }
-            }
-        }
 
-        // stage('Run Tests') { ... }  // Keep commented as-is
-        
-        stage('Security Scan') {
-            steps {
-                script {
-                    echo "Scanning Docker image for vulnerabilities: ${env.FULL_IMAGE_NAME}"
+                    echo "Building Docker image: ${env.FULL_IMAGE_NAME} with cache from ${env.CACHE_IMAGE}"
+
                     sh """
-if ! command -v trivy &> /dev/null; then
-    echo "Trivy not found, skipping security scan"
+# Pull cache image if exists
+docker pull ${env.CACHE_IMAGE} || true
+
+# Build Docker image using cache
+docker build \
+    --cache-from ${env.CACHE_IMAGE} \
+    -t ${env.FULL_IMAGE_NAME} \
+    -f docker/Dockerfile.prod .
+
+# Tag latest for branch
+if [ "${env.BRANCH_NAME}" == "develop" ]; then
+    docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
+elif [ "${env.BRANCH_NAME}" == "master" ]; then
+    docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
 else
-    trivy image --exit-code 0 --severity HIGH,CRITICAL ${env.FULL_IMAGE_NAME} || true
+    docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
 fi
 """
                 }
             }
         }
-        
+
         stage('Push to Registry') {
             steps {
                 script {
@@ -87,13 +84,15 @@ if [ "${env.BRANCH_NAME}" == "develop" ]; then
     docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
 elif [ "${env.BRANCH_NAME}" == "master" ]; then
     docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
+else
+    docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
 fi
 """
                     }
                 }
             }
         }
-        
+
         stage('Stash Deployment Info') {
             steps {
                 script {
@@ -111,71 +110,99 @@ DEPLOY_TIMESTAMP=${timestamp}
                 }
             }
         }
-        
+
         stage('Deploy to Staging') {
             when { branch 'develop' }
             steps {
                 script {
                     unstash 'deployment-info'
-                    sh """
-echo "Deploying to Staging..."
-echo "IMAGE_TAG: ${env.IMAGE_TAG}"
-echo "FULL_IMAGE_NAME: ${env.FULL_IMAGE_NAME}"
-"""
-                      sshagent([SSH_CREDENTIALS_ID]) {
+                    echo "Deploying to Staging: ${env.FULL_IMAGE_NAME}"
+                    sshagent([SSH_CREDENTIALS_ID]) {
                         withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                             sh """
-                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
-                                    set -e
-                                    cd ${DEPLOY_PATH}
-                                    
-                                    # Pull latest image
-                                    echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                                    docker pull ${env.FULL_IMAGE_NAME}
-                                    
-                                    # Update environment
-                                    export IMAGE_TAG=${env.IMAGE_TAG}
-                                    export DOCKER_REGISTRY=${DOCKER_REGISTRY}
-                                    
-                                    # Deploy
-                                    docker compose -f docker/compose/docker-compose.staging.yml up -d --no-build
-                                    
-                                    # Run migrations
-                                    docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan migrate --force || true
-                                    
-                                    # Clear caches
-                                    docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan config:cache
-                                    docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan route:cache
-                                    docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan view:cache
-                                    
-                                    # Health check
-                                    sleep 10
-                                    docker compose -f docker/compose/docker-compose.staging.yml ps
-                                EOF
-                            """
+ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
+set -e
+cd ${STAGGING_DEPLOY_PATH}
+
+# Login to Docker
+echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+
+# Pull latest image
+docker pull ${env.FULL_IMAGE_NAME}
+
+# Update environment
+export IMAGE_TAG=${env.IMAGE_TAG}
+export DOCKER_REGISTRY=${DOCKER_REGISTRY}
+
+# Deploy with Docker Compose
+docker compose -f docker_custom/compose/docker-compose.staging.yml up -d --no-build
+
+# Run migrations
+docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan migrate --force || true
+
+# Clear caches
+docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan config:cache
+docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan route:cache
+docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan view:cache
+
+# Health check
+sleep 10
+docker compose -f docker_custom/compose/docker-compose.staging.yml ps
+EOF
+"""
                         }
                     }
                 }
             }
         }
-        
+
         stage('Deploy to Production') {
             when { branch 'master' }
             steps {
                 script {
                     input message: 'Deploy to Production?', ok: 'Deploy'
                     unstash 'deployment-info'
-                    sh """
-echo "Deploying to Production..."
-echo "IMAGE_TAG: ${env.IMAGE_TAG}"
-echo "FULL_IMAGE_NAME: ${env.FULL_IMAGE_NAME}"
+                    echo "Deploying to Production: ${env.FULL_IMAGE_NAME}"
+                    sshagent([SSH_CREDENTIALS_ID]) {
+                        withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                            sh """
+ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
+set -e
+cd ${PRODUCTION_DEPLOY_PATH}
+
+# Login to Docker
+echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+
+# Pull latest image
+docker pull ${env.FULL_IMAGE_NAME}
+
+# Update environment
+export IMAGE_TAG=${env.IMAGE_TAG}
+export DOCKER_REGISTRY=${DOCKER_REGISTRY}
+
+# Deploy with Docker Compose
+docker compose -f docker_custom/compose/docker-compose.production.yml up -d --no-build
+
+# Run migrations
+docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan migrate --force || true
+
+# Clear caches
+docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan config:cache
+docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan route:cache
+docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan view:cache
+
+# Health check
+sleep 10
+docker compose -f docker_custom/compose/docker-compose.production.yml ps
+EOF
 """
-                    // sshagent([SSH_CREDENTIALS_ID]) { ... }  // keep commented
+                        }
+                    }
                 }
             }
         }
     }
-    
+
     post {
         success {
             echo "Pipeline succeeded! Image: ${env.FULL_IMAGE_NAME}"
@@ -185,11 +212,10 @@ echo "FULL_IMAGE_NAME: ${env.FULL_IMAGE_NAME}"
         }
         always {
             script {
-                // Remove only the images built by this pipeline
+                // Optional: remove only this build's images
                 sh """
-                    docker rmi -f ${env.FULL_IMAGE_NAME} || true
-                    docker rmi -f ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest || true
-                """
+docker rmi -f ${env.FULL_IMAGE_NAME} || true
+"""
             }
         }
     }
