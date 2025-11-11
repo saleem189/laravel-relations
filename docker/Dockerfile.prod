@@ -37,12 +37,13 @@
     # Copy composer files
     COPY composer.json composer.lock ./
     
+    # Copy app code
+    COPY . .
+    
     # Install Composer
     COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
     RUN composer install --no-dev --optimize-autoloader --prefer-dist
     
-    # Copy app code
-    COPY . .
     
     # Optional: build frontend assets
     RUN npm install && npm run prod
