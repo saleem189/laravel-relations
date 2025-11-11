@@ -1,17 +1,17 @@
 # =========================
 # 1️⃣ Composer Build Stage
 # =========================
-FROM php:8.2-cli-alpine AS composer_build
+FROM composer:2 AS composer_build
 
-# Install PHP extensions required for Composer dependencies
-RUN apk add --no-cache \
+WORKDIR /var/www
+
+# Install PHP extensions required during composer install
+RUN apt-get update && apt-get install -y \
         libpng-dev \
-        libjpeg-turbo-dev \
-        freetype-dev \
-        oniguruma-dev \
+        libjpeg-dev \
+        libfreetype6-dev \
+        libonig-dev \
         libzip-dev \
-        icu-dev \
-        bash \
         zip \
         unzip \
         git \
@@ -19,17 +19,19 @@ RUN apk add --no-cache \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install gd intl pdo pdo_mysql mbstring exif pcntl bcmath opcache zip
 
-WORKDIR /var/www
-
-# Copy composer files for caching
+# Copy composer files first (caching layer)
 COPY composer.json composer.lock ./
+
+# Copy artisan to avoid errors during post-autoload-dump
 COPY artisan ./
 
-# Install PHP dependencies for production
+# Install PHP dependencies (no-dev for production)
 RUN composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
 
-# Copy rest of the app and optimize autoload
+# Copy the rest of the application code
 COPY . .
+
+# Optimize autoloader
 RUN composer dump-autoload --optimize
 
 # =========================
@@ -39,14 +41,16 @@ FROM node:20 AS node_build
 
 WORKDIR /app
 
-# Copy package files for caching
+# Copy only package files for caching
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci || npm install
+# Install Node dependencies
+RUN npm ci --legacy-peer-deps
 
-# Copy frontend code and build assets
+# Copy the rest of frontend code
 COPY . .
+
+# Build assets
 RUN npm run production || echo "No frontend build step"
 
 # =========================
@@ -54,32 +58,35 @@ RUN npm run production || echo "No frontend build step"
 # =========================
 FROM php:8.2-fpm-alpine
 
-# Install runtime PHP extensions
+# Install system dependencies
 RUN apk add --no-cache \
-        libpng-dev \
-        libjpeg-turbo-dev \
-        freetype-dev \
-        oniguruma-dev \
-        libzip-dev \
-        icu-dev \
         bash \
         zip \
         unzip \
         git \
         curl \
+        libpng-dev \
+        libjpeg-turbo-dev \
+        freetype-dev \
+        oniguruma-dev \
+        libxml2-dev \
+        icu-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install gd intl pdo pdo_mysql mbstring exif pcntl bcmath opcache zip
 
 # Set working directory
 WORKDIR /var/www
 
-# Copy application source code
+# Copy application source code (after dependencies)
 COPY --from=composer_build /var/www ./
 
 # Copy built frontend assets
 COPY --from=node_build /app/public ./public
 
-# Ensure storage and cache permissions
+# Ensure artisan exists
+RUN test -f artisan || (echo "Error: artisan file not found" && exit 1)
+
+# Set file permissions
 RUN chown -R www-data:www-data /var/www \
     && chmod -R 755 /var/www/storage /var/www/bootstrap/cache
 
