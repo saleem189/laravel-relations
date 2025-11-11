@@ -2,25 +2,16 @@
 FROM composer:2 AS composer_build
 WORKDIR /var/www
 
-# Install PHP extensions required during composer install
 RUN apt-get update && apt-get install -y \
-        libpng-dev \
-        libjpeg-dev \
-        libfreetype6-dev \
-        libonig-dev \
-        libzip-dev \
-        zip \
-        unzip \
-        git \
-        curl \
+    libpng-dev libjpeg-dev libfreetype6-dev libonig-dev libzip-dev zip unzip git curl \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install gd intl pdo pdo_mysql mbstring exif pcntl bcmath opcache zip
+    && docker-php-ext-install gd intl pdo_mysql mbstring exif pcntl bcmath opcache zip
 
 COPY composer.json composer.lock ./
 COPY artisan ./
-
 RUN composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
 COPY . .
+RUN composer dump-autoload --optimize
 
 # Node Build Stage
 FROM node:20 AS node_build
@@ -34,24 +25,15 @@ RUN npm run production || echo "No frontend build step"
 FROM php:8.2-fpm
 WORKDIR /var/www
 RUN apt-get update && apt-get install -y \
-        libpng-dev \
-        libjpeg-dev \
-        libfreetype6-dev \
-        oniguruma-dev \
-        libzip-dev \
-        zip \
-        unzip \
-        git \
-        curl \
+    libpng-dev libjpeg-dev libfreetype6-dev oniguruma-dev libzip-dev zip unzip git curl \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install gd intl pdo pdo_mysql mbstring exif pcntl bcmath opcache zip
+    && docker-php-ext-install gd intl pdo_mysql mbstring exif pcntl bcmath opcache zip
 
 COPY --from=composer_build /var/www ./
 COPY --from=node_build /app/public ./public
 
 RUN test -f artisan || (echo "Error: artisan file not found" && exit 1)
-RUN chown -R www-data:www-data /var/www \
-    && chmod -R 755 /var/www/storage /var/www/bootstrap/cache
+RUN chown -R www-data:www-data /var/www && chmod -R 755 /var/www/storage /var/www/bootstrap/cache
 
 EXPOSE 9000
 CMD ["php-fpm"]
