@@ -1,77 +1,91 @@
-# -----------------------------
-# 1️⃣ Composer Builder Stage
-# -----------------------------
-    FROM php:8.2-cli-alpine AS composer_build
+# ======================================
+# 1️⃣ COMPOSER BUILD STAGE
+# ======================================
+FROM php:8.2-cli-alpine AS composer_build
 
-    # Install PHP extensions required by your app
-    RUN apk add --no-cache \
-        freetype-dev \
-        libjpeg-turbo-dev \
-        libpng-dev \
-        libzip-dev \
-        zip \
-        oniguruma-dev \
-        pkgconfig \
-        bash \
-        curl \
-        && docker-php-ext-configure gd --with-freetype --with-jpeg \
-        && docker-php-ext-install gd pdo_mysql mbstring exif pcntl bcmath opcache zip
-    
-    # Install Composer
-    RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-    
-    WORKDIR /app
-    COPY composer.json composer.lock ./
-    RUN composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
-    COPY . .
-    RUN composer dump-autoload --optimize
-    
-    
-    # -----------------------------
-    # 2️⃣ Node Builder Stage
-    # -----------------------------
-    FROM node:20 AS node_build
-    WORKDIR /app
-    ENV NODE_OPTIONS=--openssl-legacy-provider
-    COPY package*.json ./
-    RUN npm ci
-    COPY . .
-    RUN npm run production
-    
-    # -----------------------------
-    # 3️⃣ Final Production Image
-    # -----------------------------
-    FROM php:8.2-fpm-alpine
-    
-    # Install required PHP extensions
-    RUN apk add --no-cache \
-        freetype-dev \
-        libjpeg-turbo-dev \
-        libpng-dev \
-        libzip-dev \
-        oniguruma-dev \
-        pkgconfig \
-        zip \
-        && docker-php-ext-configure gd --with-freetype --with-jpeg \
-        && docker-php-ext-install gd pdo_mysql mbstring exif pcntl bcmath opcache zip
-    
-    WORKDIR /var/www
-    COPY --from=composer_build /app ./
-    COPY --from=node_build /app/public ./public
-    
-    # Ensure storage permissions
-    RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
-    
-    # Production PHP settings
-    RUN { \
-        echo "opcache.enable=1"; \
-        echo "opcache.enable_cli=1"; \
-        echo "opcache.memory_consumption=128"; \
-        echo "expose_php=0"; \
-    } > /usr/local/etc/php/conf.d/opcache.ini
-    
-    # Expose PHP-FPM port for Nginx
-    EXPOSE 9000
-    
-    CMD ["php-fpm"]
-    
+# Install required build dependencies and PHP extensions
+RUN apk add --no-cache \
+    freetype-dev \
+    libjpeg-turbo-dev \
+    libpng-dev \
+    libzip-dev \
+    oniguruma-dev \
+    pkgconfig \
+    zip \
+    bash \
+    curl \
+    git \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install gd pdo_mysql mbstring exif pcntl bcmath opcache zip
+
+# Install Composer manually
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+WORKDIR /app
+COPY composer.json composer.lock ./
+
+# Install production dependencies only
+RUN composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+
+# Copy application source
+COPY . .
+RUN composer dump-autoload --optimize
+
+
+# ======================================
+# 2️⃣ NODE BUILD STAGE
+# ======================================
+FROM node:20 AS node_build
+WORKDIR /app
+
+# Handle OpenSSL compatibility for older webpack / Laravel Mix
+ENV NODE_OPTIONS=--openssl-legacy-provider
+
+COPY package*.json ./
+RUN npm ci || npm install
+COPY . .
+RUN npm run production
+
+
+# ======================================
+# 3️⃣ FINAL PRODUCTION IMAGE
+# ======================================
+FROM php:8.2-fpm-alpine
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    freetype-dev \
+    libjpeg-turbo-dev \
+    libpng-dev \
+    libzip-dev \
+    oniguruma-dev \
+    pkgconfig \
+    zip \
+    bash \
+    curl \
+    git \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install gd pdo_mysql mbstring exif pcntl bcmath opcache zip
+
+# Working directory
+WORKDIR /var/www
+
+# Copy from builder stages
+COPY --from=composer_build /app ./
+COPY --from=node_build /app/public ./public
+
+# Fix permissions for Laravel
+RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
+
+# PHP optimization & security settings
+RUN { \
+    echo "opcache.enable=1"; \
+    echo "opcache.enable_cli=1"; \
+    echo "opcache.memory_consumption=256"; \
+    echo "expose_php=0"; \
+} > /usr/local/etc/php/conf.d/opcache.ini
+
+# Expose PHP-FPM port
+EXPOSE 9000
+
+CMD ["php-fpm"]
