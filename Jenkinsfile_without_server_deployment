@@ -122,39 +122,7 @@ echo "Deploying to Staging..."
 echo "IMAGE_TAG: ${env.IMAGE_TAG}"
 echo "FULL_IMAGE_NAME: ${env.FULL_IMAGE_NAME}"
 """
-                      sshagent([SSH_CREDENTIALS_ID]) {
-                        withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                            sh """
-                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
-                                    set -e
-                                    cd ${DEPLOY_PATH}
-                                    
-                                    # Pull latest image
-                                    echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                                    docker pull ${env.FULL_IMAGE_NAME}
-                                    
-                                    # Update environment
-                                    export IMAGE_TAG=${env.IMAGE_TAG}
-                                    export DOCKER_REGISTRY=${DOCKER_REGISTRY}
-                                    
-                                    # Deploy
-                                    docker compose -f docker/compose/docker-compose.staging.yml up -d --no-build
-                                    
-                                    # Run migrations
-                                    docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan migrate --force || true
-                                    
-                                    # Clear caches
-                                    docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan config:cache
-                                    docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan route:cache
-                                    docker compose -f docker/compose/docker-compose.staging.yml exec -T app php artisan view:cache
-                                    
-                                    # Health check
-                                    sleep 10
-                                    docker compose -f docker/compose/docker-compose.staging.yml ps
-                                EOF
-                            """
-                        }
-                    }
+                    // sshagent([SSH_CREDENTIALS_ID]) { ... }  // keep commented
                 }
             }
         }
