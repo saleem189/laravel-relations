@@ -1,53 +1,89 @@
-# 1️⃣ Composer Build
-FROM composer:2 AS composer_build
+# =========================
+# 1️⃣ Composer Build Stage
+# =========================
+FROM php:8.2-cli-alpine AS composer_build
+
+# Install PHP extensions required for Composer dependencies
+RUN apk add --no-cache \
+        libpng-dev \
+        libjpeg-turbo-dev \
+        freetype-dev \
+        oniguruma-dev \
+        libzip-dev \
+        icu-dev \
+        bash \
+        zip \
+        unzip \
+        git \
+        curl \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install gd intl pdo pdo_mysql mbstring exif pcntl bcmath opcache zip
+
 WORKDIR /var/www
+
+# Copy composer files for caching
 COPY composer.json composer.lock ./
 COPY artisan ./
+
+# Install PHP dependencies for production
 RUN composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
 
-# 2️⃣ Node Build
-FROM node:18 AS node_build
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --legacy-peer-deps
+# Copy rest of the app and optimize autoload
 COPY . .
-RUN npm run build || echo "No frontend build step"
+RUN composer dump-autoload --optimize
 
-# 3️⃣ Final PHP-FPM
+# =========================
+# 2️⃣ Node Build Stage
+# =========================
+FROM node:20 AS node_build
+
+WORKDIR /app
+
+# Copy package files for caching
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci || npm install
+
+# Copy frontend code and build assets
+COPY . .
+RUN npm run production || echo "No frontend build step"
+
+# =========================
+# 3️⃣ Final Production Image
+# =========================
 FROM php:8.2-fpm-alpine
 
+# Install runtime PHP extensions
 RUN apk add --no-cache \
-    bash \
-    zip \
-    unzip \
-    git \
-    curl \
-    libpng-dev \
-    libjpeg-turbo-dev \
-    freetype-dev \
-    oniguruma-dev \
-    libxml2-dev \
-    icu-dev \
+        libpng-dev \
+        libjpeg-turbo-dev \
+        freetype-dev \
+        oniguruma-dev \
+        libzip-dev \
+        icu-dev \
+        bash \
+        zip \
+        unzip \
+        git \
+        curl \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install gd intl pdo pdo_mysql mbstring exif pcntl bcmath opcache
+    && docker-php-ext-install gd intl pdo pdo_mysql mbstring exif pcntl bcmath opcache zip
 
+# Set working directory
 WORKDIR /var/www
 
-# Copy full app source
-COPY . .
+# Copy application source code
+COPY --from=composer_build /var/www ./
 
-# Copy vendor and artisan from composer stage
-COPY --from=composer_build /var/www/vendor ./vendor
-COPY --from=composer_build /var/www/artisan ./artisan
-
-# Copy built frontend
+# Copy built frontend assets
 COPY --from=node_build /app/public ./public
 
-# File permissions
+# Ensure storage and cache permissions
 RUN chown -R www-data:www-data /var/www \
     && chmod -R 755 /var/www/storage /var/www/bootstrap/cache
 
-# Expose PHP-FPM
+# Expose PHP-FPM port
 EXPOSE 9000
 
 # Start PHP-FPM
