@@ -111,34 +111,42 @@ pipeline {
             }
         }
 
-        stage('Prepare Remote Server') {
-            when { 
-                anyOf { 
-                    branch 'develop'
-                    branch 'master'
-                }
-            }
-            steps {
-                sshagent([SSH_CREDENTIALS_ID]) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
-                        # Create deploy directory
-                        mkdir -p ${STAGGING_DEPLOY_PATH}
+       stage('Prepare Remote Server') {
+    when { anyOf { branch 'develop'; branch 'master' } }
+    steps {
+        sshagent([SSH_CREDENTIALS_ID]) {
+            script {
+                sh """
+# 1️⃣ Ensure main deploy path exists
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${DEPLOY_PATH}"
 
-                        # Copy docker-compose files only if missing
-                        [ -f ${STAGGING_DEPLOY_PATH}/docker_custom/compose/docker-compose.staging.yml ] || \
-                        scp -r docker_custom ${DEPLOY_USER}@${DEPLOY_HOST}:${STAGGING_DEPLOY_PATH}/
+# 2️⃣ Ensure subdirectories exist (docker_custom, env)
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${DEPLOY_PATH}/docker_custom/compose"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${DEPLOY_PATH}/env"
 
-                        # Copy .env only if missing
-                        [ -f ${STAGGING_DEPLOY_PATH}/.env.staging ] || \
-                        scp .env.staging ${DEPLOY_USER}@${DEPLOY_HOST}:${STAGGING_DEPLOY_PATH}/.env.staging
+# 3️⃣ Copy docker_custom directory only if it doesn't exist
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "[ -d ${DEPLOY_PATH}/docker_custom ]" || \
+scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null docker_custom ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/
 
-                        echo '✅ Remote server prepared successfully'
-                        EOF
-                    """
-                }
+# 4️⃣ Copy branch-specific .env file if missing
+if [ "${BRANCH_NAME}" = "develop" ]; then
+    REMOTE_ENV_FILE="${DEPLOY_PATH}/env/.env.staging"
+    LOCAL_ENV_FILE="env/.env.staging"
+elif [ "${BRANCH_NAME}" = "master" ]; then
+    REMOTE_ENV_FILE="${DEPLOY_PATH}/env/.env.production"
+    LOCAL_ENV_FILE="env/.env.production"
+fi
+
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "[ -f \$REMOTE_ENV_FILE ]" || \
+scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \$LOCAL_ENV_FILE ${DEPLOY_USER}@${DEPLOY_HOST}:\$REMOTE_ENV_FILE
+
+echo "✅ Remote server prepared successfully"
+"""
             }
         }
+    }
+}
+
 
 
 
