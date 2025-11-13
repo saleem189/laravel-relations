@@ -111,52 +111,30 @@ pipeline {
             }
         }
 
-stage('Prepare Remote Server') {
-    when { 
-        anyOf { branch 'develop'; branch 'master' } 
-    }
-    steps {
-        sshagent([SSH_CREDENTIALS_ID]) {
-            script {
-                // Use a heredoc to simplify multiple ssh/scp commands
-                sh """
-                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << 'EOF'
-                    # Create base deploy path if it doesn't exist
-                    mkdir -p ${DEPLOY_PATH}
-
-                    # Copy docker_custom directory only if missing
-                    if [ ! -d "${DEPLOY_PATH}/docker_custom" ]; then
-                        exit 1
-                    fi
-                    EOF
-                    """ 
-                    // Copy docker_custom if missing
+        stage('Prepare Remote Server') {
+            when { branch 'develop' || branch 'master' }
+            steps {
+                sshagent([SSH_CREDENTIALS_ID]) {
                     sh """
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "[ -d ${DEPLOY_PATH}/docker_custom ]" || \
-                        scp -r -o StrictHostKeyChecking=no docker_custom ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/
-                    """
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
+                        # Create deploy directory
+                        mkdir -p ${STAGGING_DEPLOY_PATH}
 
-                    // Copy .env.staging if branch is develop and missing
-                    sh """
-                        if [ "${BRANCH_NAME}" = "develop" ]; then
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "[ -f ${DEPLOY_PATH}/docker_custom/env/.env.staging ]" || \
-                            scp -o StrictHostKeyChecking=no docker_custom/env/.env.staging ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/docker_custom/env/.env.staging
-                        fi
-                    """
+                        # Copy docker-compose files only if missing
+                        [ -f ${STAGGING_DEPLOY_PATH}/docker_custom/compose/docker-compose.staging.yml ] || \
+                        scp -r docker_custom ${DEPLOY_USER}@${DEPLOY_HOST}:${STAGGING_DEPLOY_PATH}/
 
-                    // Copy .env.production if branch is master and missing
-                    sh """
-                        if [ "${BRANCH_NAME}" = "master" ]; then
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "[ -f ${DEPLOY_PATH}/docker_custom/env/.env.production ]" || \
-                            scp -o StrictHostKeyChecking=no docker_custom/env/.env.production ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/docker_custom/env/.env.production
-                        fi
-                    """
+                        # Copy .env only if missing
+                        [ -f ${STAGGING_DEPLOY_PATH}/.env.staging ] || \
+                        scp .env.staging ${DEPLOY_USER}@${DEPLOY_HOST}:${STAGGING_DEPLOY_PATH}/.env.staging
 
-                echo '✅ Remote server prepared successfully'
+                        echo '✅ Remote server prepared successfully'
+                        EOF
+                    """
+                }
             }
         }
-    }
-}
+
 
 
         stage('Deploy to Staging') {
