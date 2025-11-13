@@ -25,7 +25,10 @@ pipeline {
             steps {
                 checkout scm
                 script {
-                    env.BRANCH_NAME = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'master'
+                    // Get branch name and clean it (remove origin/, remotes/origin/, etc.)
+                    def rawBranch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'master'
+                    env.BRANCH_NAME = rawBranch.replaceAll(/^origin\//, '').replaceAll(/^remotes\/origin\//, '').replaceAll(/^remotes\//, '')
+                    echo "Detected branch: ${env.BRANCH_NAME} (from: ${rawBranch})"
                 }
             }
         }
@@ -48,6 +51,7 @@ pipeline {
                     }
 
                     echo "Building Docker image: ${env.FULL_IMAGE_NAME} with cache from ${env.CACHE_IMAGE}"
+                    echo "Branch name for tagging: ${env.BRANCH_NAME}"
 
                     sh """
                         # Pull cache image if exists
@@ -61,11 +65,17 @@ pipeline {
 
                         # Tag latest for branch
                         if [ "${env.BRANCH_NAME}" == "develop" ]; then
+                            echo "Tagging as staging-latest..."
                             docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
+                            echo "✅ Tagged: ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest"
                         elif [ "${env.BRANCH_NAME}" == "master" ]; then
+                            echo "Tagging as prod-latest..."
                             docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
+                            echo "✅ Tagged: ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest"
                         else
+                            echo "Tagging as latest for branch: ${env.BRANCH_NAME}"
                             docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+                            echo "✅ Tagged: ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest"
                         fi
                     """
                 }
@@ -76,16 +86,25 @@ pipeline {
             steps {
                 script {
                     echo "Pushing Docker image: ${env.FULL_IMAGE_NAME}"
+                    echo "Branch name: ${env.BRANCH_NAME}"
                     withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         sh """
                             echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
                             docker push ${env.FULL_IMAGE_NAME}
+                            
+                            # Push latest tag based on branch
                             if [ "${env.BRANCH_NAME}" == "develop" ]; then
+                                echo "Pushing staging-latest tag..."
                                 docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
+                                echo "✅ Successfully pushed ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest"
                             elif [ "${env.BRANCH_NAME}" == "master" ]; then
+                                echo "Pushing prod-latest tag..."
                                 docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
+                                echo "✅ Successfully pushed ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest"
                             else
+                                echo "Pushing latest tag for branch: ${env.BRANCH_NAME}"
                                 docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+                                echo "✅ Successfully pushed ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest"
                             fi
                         """
                     }
