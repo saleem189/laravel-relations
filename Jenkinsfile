@@ -134,10 +134,35 @@ pipeline {
         stage('Copy docker_custom to Remote') {
             steps {
                 sshagent([SSH_CREDENTIALS_ID]) {
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no ubuntu@172.22.146.117 "mkdir -p /opt/laravel-relations/docker_custom"
-                        scp -o StrictHostKeyChecking=no -r docker_custom ubuntu@172.22.146.117:/opt/laravel-relations/
-                    '''
+                    script {
+                        // Determine which env file to symlink based on branch
+                        def targetEnvName = '.env.staging'
+                        if (env.BRANCH_NAME == 'master') {
+                            targetEnvName = '.env.production'
+                        }
+                        
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ubuntu@172.22.146.117 "mkdir -p /opt/laravel-relations/docker_custom"
+                            scp -o StrictHostKeyChecking=no -r docker_custom ubuntu@172.22.146.117:/opt/laravel-relations/
+                            
+                            # Create symlink for .env file in compose directory (for docker-compose variable substitution)
+                            ssh -o StrictHostKeyChecking=no ubuntu@172.22.146.117 bash -c "
+                                cd /opt/laravel-relations/docker_custom/compose
+                                # Remove existing .env if it's not a symlink
+                                if [ -f .env ] && [ ! -L .env ]; then
+                                    rm .env
+                                fi
+                                # Create symlink if it doesn't exist or update if pointing to wrong file
+                                if [ ! -L .env ] || [ \"\\\$(readlink .env)\" != \"../env/${targetEnvName}\" ]; then
+                                    rm -f .env
+                                    ln -s ../env/${targetEnvName} .env
+                                    echo \"✅ Created symlink: compose/.env -> env/${targetEnvName}\"
+                                else
+                                    echo \"✅ Symlink already exists and points to correct file\"
+                                fi
+                            "
+                        """
+                    }
                 }
             }
         }
