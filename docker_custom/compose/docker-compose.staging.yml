@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   app:
-    image: "${DOCKER_REGISTRY:-devsaleem}/laravel-realtions:${IMAGE_TAG:-latest}"
+    image: "${DOCKER_REGISTRY:-devsaleem}/laravel-relations:${IMAGE_TAG:-latest}"
     container_name: laravel-app-staging
     restart: unless-stopped
     working_dir: /var/www/html

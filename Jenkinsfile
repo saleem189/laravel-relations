@@ -112,26 +112,13 @@ pipeline {
         }
 
 
-        stage('Prepare Remote Server') {
+        stage('Copy docker_custom to Remote') {
             steps {
-                sshagent([SSH_CREDENTIALS_ID]) {
-                    script {
-                        // Define paths
-                        def remotePath = DEPLOY_PATH
-                        def workspacePath = "${env.WORKSPACE}/docker_custom"
-
-                        sh """
-                        # Create necessary directories on remote server
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${remotePath}/compose"
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${remotePath}/env"
-
-                        # Copy docker compose files
-                        scp -o StrictHostKeyChecking=no -r ${workspacePath}/compose/* ${DEPLOY_USER}@${DEPLOY_HOST}:${remotePath}/compose/
-
-                        # Copy env files
-                        scp -o StrictHostKeyChecking=no -r ${workspacePath}/env/* ${DEPLOY_USER}@${DEPLOY_HOST}:${remotePath}/env/
-                        """
-                    }
+                sshagent(['ubuntu-credentials-id']) {
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ubuntu@172.22.146.117 "mkdir -p /opt/laravel-relations/docker_custom"
+                        scp -o StrictHostKeyChecking=no -r docker_custom ubuntu@172.22.146.117:/opt/laravel-relations/
+                    '''
                 }
             }
         }
