@@ -43,11 +43,13 @@ services:
     image: mysql:8.0
     container_name: laravel-mysql-staging
     restart: unless-stopped
+    env_file:
+      - ../env/.env.staging
     environment:
       MYSQL_DATABASE: ${DB_DATABASE}
       MYSQL_USER: ${DB_USERNAME}
       MYSQL_PASSWORD: ${DB_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-staging_root_password_change_me}
     volumes:
       - db_data:/var/lib/mysql
     networks:

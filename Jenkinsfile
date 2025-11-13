@@ -64,11 +64,11 @@ pipeline {
                             -f docker/Dockerfile.prod .
 
                         # Tag latest for branch
-                        if [ "${env.BRANCH_NAME}" == "develop" ]; then
+                        if [ "${env.BRANCH_NAME}" = "develop" ]; then
                             echo "Tagging as staging-latest..."
                             docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
                             echo "✅ Tagged: ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest"
-                        elif [ "${env.BRANCH_NAME}" == "master" ]; then
+                        elif [ "${env.BRANCH_NAME}" = "master" ]; then
                             echo "Tagging as prod-latest..."
                             docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
                             echo "✅ Tagged: ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest"
@@ -93,11 +93,11 @@ pipeline {
                             docker push ${env.FULL_IMAGE_NAME}
                             
                             # Push latest tag based on branch
-                            if [ "${env.BRANCH_NAME}" == "develop" ]; then
+                            if [ "${env.BRANCH_NAME}" = "develop" ]; then
                                 echo "Pushing staging-latest tag..."
                                 docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
                                 echo "✅ Successfully pushed ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest"
-                            elif [ "${env.BRANCH_NAME}" == "master" ]; then
+                            elif [ "${env.BRANCH_NAME}" = "master" ]; then
                                 echo "Pushing prod-latest tag..."
                                 docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
                                 echo "✅ Successfully pushed ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest"

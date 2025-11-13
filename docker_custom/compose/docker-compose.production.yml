@@ -45,6 +45,8 @@ services:
     image: mysql:8.0
     container_name: laravel-mysql-prod
     restart: always
+    env_file:
+      - ../env/.env.production
     environment:
       MYSQL_DATABASE: ${DB_DATABASE}
       MYSQL_USER: ${DB_USERNAME}
