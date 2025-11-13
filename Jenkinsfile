@@ -112,7 +112,12 @@ pipeline {
         }
 
         stage('Prepare Remote Server') {
-            when { branch 'develop' || branch 'master' }
+            when { 
+                anyOf { 
+                    branch 'develop'
+                    branch 'master'
+                }
+            }
             steps {
                 sshagent([SSH_CREDENTIALS_ID]) {
                     sh """
