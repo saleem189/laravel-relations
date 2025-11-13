@@ -114,7 +114,7 @@ pipeline {
 
         stage('Copy docker_custom to Remote') {
             steps {
-                sshagent(['ubuntu-credentials-id']) {
+                sshagent([SSH_CREDENTIALS_ID]) {
                     sh '''
                         ssh -o StrictHostKeyChecking=no ubuntu@172.22.146.117 "mkdir -p /opt/laravel-relations/docker_custom"
                         scp -o StrictHostKeyChecking=no -r docker_custom ubuntu@172.22.146.117:/opt/laravel-relations/
