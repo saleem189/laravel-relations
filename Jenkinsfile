@@ -111,41 +111,30 @@ pipeline {
             }
         }
 
-       stage('Prepare Remote Server') {
-    when { anyOf { branch 'develop'; branch 'master' } }
-    steps {
-        sshagent([SSH_CREDENTIALS_ID]) {
-            script {
-                sh """
-# 1️⃣ Ensure main deploy path exists
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${DEPLOY_PATH}"
 
-# 2️⃣ Ensure subdirectories exist (docker_custom, env)
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${DEPLOY_PATH}/docker_custom/compose"
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${DEPLOY_PATH}/docker_custom/env"
+        stage('Prepare Remote Server') {
+            steps {
+                sshagent([SSH_CREDENTIALS_ID]) {
+                    script {
+                        // Define paths
+                        def remotePath = DEPLOY_PATH
+                        def workspacePath = "${env.WORKSPACE}/docker_custom"
 
-# 3️⃣ Copy docker_custom directory only if it doesn't exist
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "[ -d ${DEPLOY_PATH}/docker_custom ]" || \
-scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null docker_custom ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/
+                        sh """
+                        # Create necessary directories on remote server
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${remotePath}/compose"
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${remotePath}/env"
 
-# 4️⃣ Copy branch-specific .env file if missing
-if [ "${BRANCH_NAME}" = "develop" ]; then
-    REMOTE_ENV_FILE="${DEPLOY_PATH}/docker_custom/env/.env.staging"
-    LOCAL_ENV_FILE="docker_custom/env/.env.staging"
-elif [ "${BRANCH_NAME}" = "master" ]; then
-    REMOTE_ENV_FILE="${DEPLOY_PATH}/docker_custom/env/.env.production"
-    LOCAL_ENV_FILE="docker_custom/env/.env.production"
-fi
+                        # Copy docker compose files
+                        scp -o StrictHostKeyChecking=no -r ${workspacePath}/compose/* ${DEPLOY_USER}@${DEPLOY_HOST}:${remotePath}/compose/
 
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "[ -f \$REMOTE_ENV_FILE ]" || \
-scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \$LOCAL_ENV_FILE ${DEPLOY_USER}@${DEPLOY_HOST}:\$REMOTE_ENV_FILE
-
-echo "✅ Remote server prepared successfully"
-"""
+                        # Copy env files
+                        scp -o StrictHostKeyChecking=no -r ${workspacePath}/env/* ${DEPLOY_USER}@${DEPLOY_HOST}:${remotePath}/env/
+                        """
+                    }
+                }
             }
         }
-    }
-}
 
 
 
