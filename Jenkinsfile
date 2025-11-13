@@ -50,24 +50,24 @@ pipeline {
                     echo "Building Docker image: ${env.FULL_IMAGE_NAME} with cache from ${env.CACHE_IMAGE}"
 
                     sh """
-# Pull cache image if exists
-docker pull ${env.CACHE_IMAGE} || true
+                        # Pull cache image if exists
+                        docker pull ${env.CACHE_IMAGE} || true
 
-# Build Docker image using cache
-docker build \
-    --cache-from ${env.CACHE_IMAGE} \
-    -t ${env.FULL_IMAGE_NAME} \
-    -f docker/Dockerfile.prod .
+                        # Build Docker image using cache
+                        docker build \
+                            --cache-from ${env.CACHE_IMAGE} \
+                            -t ${env.FULL_IMAGE_NAME} \
+                            -f docker/Dockerfile.prod .
 
-# Tag latest for branch
-if [ "${env.BRANCH_NAME}" == "develop" ]; then
-    docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
-elif [ "${env.BRANCH_NAME}" == "master" ]; then
-    docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
-else
-    docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
-fi
-"""
+                        # Tag latest for branch
+                        if [ "${env.BRANCH_NAME}" == "develop" ]; then
+                            docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
+                        elif [ "${env.BRANCH_NAME}" == "master" ]; then
+                            docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
+                        else
+                            docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+                        fi
+                    """
                 }
             }
         }
@@ -78,16 +78,16 @@ fi
                     echo "Pushing Docker image: ${env.FULL_IMAGE_NAME}"
                     withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         sh """
-echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-docker push ${env.FULL_IMAGE_NAME}
-if [ "${env.BRANCH_NAME}" == "develop" ]; then
-    docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
-elif [ "${env.BRANCH_NAME}" == "master" ]; then
-    docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
-else
-    docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
-fi
-"""
+                            echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                            docker push ${env.FULL_IMAGE_NAME}
+                            if [ "${env.BRANCH_NAME}" == "develop" ]; then
+                                docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
+                            elif [ "${env.BRANCH_NAME}" == "master" ]; then
+                                docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
+                            else
+                                docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+                            fi
+                        """
                     }
                 }
             }
@@ -99,17 +99,65 @@ fi
                     def commit = env.GIT_COMMIT_SHORT
                     def timestamp = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone('UTC'))
                     writeFile file: 'deployment-info.txt', text: """
-IMAGE_TAG=${env.IMAGE_TAG}
-FULL_IMAGE_NAME=${env.FULL_IMAGE_NAME}
-BRANCH_NAME=${env.BRANCH_NAME}
-BUILD_NUMBER=${env.BUILD_NUMBER}
-GIT_COMMIT=${commit}
-DEPLOY_TIMESTAMP=${timestamp}
-"""
+                                        IMAGE_TAG=${env.IMAGE_TAG}
+                                        FULL_IMAGE_NAME=${env.FULL_IMAGE_NAME}
+                                        BRANCH_NAME=${env.BRANCH_NAME}
+                                        BUILD_NUMBER=${env.BUILD_NUMBER}
+                                        GIT_COMMIT=${commit}
+                                        DEPLOY_TIMESTAMP=${timestamp}
+                                    """
                     stash includes: 'deployment-info.txt', name: 'deployment-info'
                 }
             }
         }
+
+stage('Prepare Remote Server') {
+    when { 
+        anyOf { branch 'develop'; branch 'master' } 
+    }
+    steps {
+        sshagent([SSH_CREDENTIALS_ID]) {
+            script {
+                // Use a heredoc to simplify multiple ssh/scp commands
+                sh """
+                    ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << 'EOF'
+                    # Create base deploy path if it doesn't exist
+                    mkdir -p ${DEPLOY_PATH}
+
+                    # Copy docker_custom directory only if missing
+                    if [ ! -d "${DEPLOY_PATH}/docker_custom" ]; then
+                        exit 1
+                    fi
+                    EOF
+                    """ 
+                    // Copy docker_custom if missing
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "[ -d ${DEPLOY_PATH}/docker_custom ]" || \
+                        scp -r -o StrictHostKeyChecking=no docker_custom ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/
+                    """
+
+                    // Copy .env.staging if branch is develop and missing
+                    sh """
+                        if [ "${BRANCH_NAME}" = "develop" ]; then
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "[ -f ${DEPLOY_PATH}/docker_custom/env/.env.staging ]" || \
+                            scp -o StrictHostKeyChecking=no docker_custom/env/.env.staging ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/docker_custom/env/.env.staging
+                        fi
+                    """
+
+                    // Copy .env.production if branch is master and missing
+                    sh """
+                        if [ "${BRANCH_NAME}" = "master" ]; then
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "[ -f ${DEPLOY_PATH}/docker_custom/env/.env.production ]" || \
+                            scp -o StrictHostKeyChecking=no docker_custom/env/.env.production ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/docker_custom/env/.env.production
+                        fi
+                    """
+
+                echo '✅ Remote server prepared successfully'
+            }
+        }
+    }
+}
+
 
         stage('Deploy to Staging') {
             when { branch 'develop' }
@@ -120,36 +168,36 @@ DEPLOY_TIMESTAMP=${timestamp}
                     sshagent([SSH_CREDENTIALS_ID]) {
                         withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                             sh """
-ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
-set -e
-cd ${STAGGING_DEPLOY_PATH}
+                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
+                                set -e
+                                cd ${STAGGING_DEPLOY_PATH}
 
-# Login to Docker
-echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                                # Login to Docker
+                                echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
 
-# Pull latest image
-docker pull ${env.FULL_IMAGE_NAME}
+                                # Pull latest image
+                                docker pull ${env.FULL_IMAGE_NAME}
 
-# Update environment
-export IMAGE_TAG=${env.IMAGE_TAG}
-export DOCKER_REGISTRY=${DOCKER_REGISTRY}
+                                # Update environment
+                                export IMAGE_TAG=${env.IMAGE_TAG}
+                                export DOCKER_REGISTRY=${DOCKER_REGISTRY}
 
-# Deploy with Docker Compose
-docker compose -f docker_custom/compose/docker-compose.staging.yml up -d --no-build
+                                # Deploy with Docker Compose
+                                docker compose -f docker_custom/compose/docker-compose.staging.yml up -d --no-build
 
-# Run migrations
-docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan migrate --force || true
+                                # Run migrations
+                                docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan migrate --force || true
 
-# Clear caches
-docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan config:cache
-docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan route:cache
-docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan view:cache
+                                # Clear caches
+                                docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan config:cache
+                                docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan route:cache
+                                docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan view:cache
 
-# Health check
-sleep 10
-docker compose -f docker_custom/compose/docker-compose.staging.yml ps
-EOF
-"""
+                                # Health check
+                                sleep 10
+                                docker compose -f docker_custom/compose/docker-compose.staging.yml ps
+                                EOF
+                            """
                         }
                     }
                 }
@@ -165,37 +213,40 @@ EOF
                     echo "Deploying to Production: ${env.FULL_IMAGE_NAME}"
                     sshagent([SSH_CREDENTIALS_ID]) {
                         withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                            // sh """
+                            //     ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
+                            //     set -e
+                            //     cd ${PRODUCTION_DEPLOY_PATH}
+
+                            //     # Login to Docker
+                            //     echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+
+                            //     # Pull latest image
+                            //     docker pull ${env.FULL_IMAGE_NAME}
+
+                            //     # Update environment
+                            //     export IMAGE_TAG=${env.IMAGE_TAG}
+                            //     export DOCKER_REGISTRY=${DOCKER_REGISTRY}
+
+                            //     # Deploy with Docker Compose
+                            //     docker compose -f docker_custom/compose/docker-compose.production.yml up -d --no-build
+
+                            //     # Run migrations
+                            //     docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan migrate --force || true
+
+                            //     # Clear caches
+                            //     docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan config:cache
+                            //     docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan route:cache
+                            //     docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan view:cache
+
+                            //     # Health check
+                            //     sleep 10
+                            //     docker compose -f docker_custom/compose/docker-compose.production.yml ps
+                            //     EOF
+                            // """
                             sh """
-ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
-set -e
-cd ${PRODUCTION_DEPLOY_PATH}
-
-# Login to Docker
-echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-
-# Pull latest image
-docker pull ${env.FULL_IMAGE_NAME}
-
-# Update environment
-export IMAGE_TAG=${env.IMAGE_TAG}
-export DOCKER_REGISTRY=${DOCKER_REGISTRY}
-
-# Deploy with Docker Compose
-docker compose -f docker_custom/compose/docker-compose.production.yml up -d --no-build
-
-# Run migrations
-docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan migrate --force || true
-
-# Clear caches
-docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan config:cache
-docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan route:cache
-docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan view:cache
-
-# Health check
-sleep 10
-docker compose -f docker_custom/compose/docker-compose.production.yml ps
-EOF
-"""
+                               echo "Deploying to Production: ${env.FULL_IMAGE_NAME}"
+                            """
                         }
                     }
                 }
