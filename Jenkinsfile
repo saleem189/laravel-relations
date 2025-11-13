@@ -146,21 +146,32 @@ pipeline {
                             scp -o StrictHostKeyChecking=no -r docker_custom ubuntu@172.22.146.117:/opt/laravel-relations/
                             
                             # Create symlink for .env file in compose directory (for docker-compose variable substitution)
-                            ssh -o StrictHostKeyChecking=no ubuntu@172.22.146.117 bash -c "
+                            ssh -o StrictHostKeyChecking=no ubuntu@172.22.146.117 << 'REMOTE_SCRIPT'
                                 cd /opt/laravel-relations/docker_custom/compose
+                                # Determine env file based on what exists
+                                if [ -f ../env/.env.staging ]; then
+                                    ENV_FILE="../env/.env.staging"
+                                elif [ -f ../env/.env.production ]; then
+                                    ENV_FILE="../env/.env.production"
+                                else
+                                    echo "⚠️  Warning: No .env.staging or .env.production found"
+                                    exit 1
+                                fi
+                                
                                 # Remove existing .env if it's not a symlink
                                 if [ -f .env ] && [ ! -L .env ]; then
                                     rm .env
                                 fi
+                                
                                 # Create symlink if it doesn't exist or update if pointing to wrong file
-                                if [ ! -L .env ] || [ \"\\\$(readlink .env)\" != \"../env/${targetEnvName}\" ]; then
+                                if [ ! -L .env ] || [ "\$(readlink .env)" != "\$ENV_FILE" ]; then
                                     rm -f .env
-                                    ln -s ../env/${targetEnvName} .env
-                                    echo \"✅ Created symlink: compose/.env -> env/${targetEnvName}\"
+                                    ln -s "\$ENV_FILE" .env
+                                    echo "✅ Created symlink: compose/.env -> \$ENV_FILE"
                                 else
-                                    echo \"✅ Symlink already exists and points to correct file\"
+                                    echo "✅ Symlink already exists and points to correct file"
                                 fi
-                            "
+REMOTE_SCRIPT
                         """
                     }
                 }
