@@ -6,7 +6,7 @@ pipeline {
         DOCKER_IMAGE = 'laravel-relations'
         DOCKER_CREDENTIALS_ID = 'docker-registry-credentials'
         SSH_CREDENTIALS_ID = 'ssh-deploy-credentials'
-        DEPLOY_HOST = '172.22.197.128'
+        DEPLOY_HOST = '172.22.146.117'
         DEPLOY_USER = 'ubuntu'
         DEPLOY_PATH = '/opt/laravel-relations'
         STAGGING_DEPLOY_PATH = '/opt/laravel-relations'
