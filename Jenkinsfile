@@ -122,7 +122,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@$
 
 # 2️⃣ Ensure subdirectories exist (docker_custom, env)
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${DEPLOY_PATH}/docker_custom/compose"
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${DEPLOY_PATH}/env"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${DEPLOY_PATH}/docker_custom/env"
 
 # 3️⃣ Copy docker_custom directory only if it doesn't exist
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "[ -d ${DEPLOY_PATH}/docker_custom ]" || \
@@ -130,11 +130,11 @@ scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null docker_custom
 
 # 4️⃣ Copy branch-specific .env file if missing
 if [ "${BRANCH_NAME}" = "develop" ]; then
-    REMOTE_ENV_FILE="${DEPLOY_PATH}/env/.env.staging"
-    LOCAL_ENV_FILE="env/.env.staging"
+    REMOTE_ENV_FILE="${DEPLOY_PATH}/docker_custom/env/.env.staging"
+    LOCAL_ENV_FILE="docker_custom/env/.env.staging"
 elif [ "${BRANCH_NAME}" = "master" ]; then
-    REMOTE_ENV_FILE="${DEPLOY_PATH}/env/.env.production"
-    LOCAL_ENV_FILE="env/.env.production"
+    REMOTE_ENV_FILE="${DEPLOY_PATH}/docker_custom/env/.env.production"
+    LOCAL_ENV_FILE="docker_custom/env/.env.production"
 fi
 
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEPLOY_USER}@${DEPLOY_HOST} "[ -f \$REMOTE_ENV_FILE ]" || \
