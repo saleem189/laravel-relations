@@ -5,19 +5,42 @@ echo "Starting Laravel application entrypoint..."
 
 # Wait for database to be ready
 echo "Waiting for database connection..."
-until php -r "
+echo "DB_HOST: ${DB_HOST:-db}"
+echo "DB_PORT: ${DB_PORT:-3306}"
+echo "DB_USERNAME: ${DB_USERNAME:-not set}"
+echo "DB_DATABASE: ${DB_DATABASE:-not set}"
+
+MAX_RETRIES=30
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if php -r "
     try {
         \$pdo = new PDO('mysql:host=${DB_HOST:-db};port=${DB_PORT:-3306}', '${DB_USERNAME}', '${DB_PASSWORD}');
         \$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         exit(0);
     } catch (PDOException \$e) {
+        echo 'Connection error: ' . \$e->getMessage() . PHP_EOL;
         exit(1);
     }
-" 2>/dev/null; do
-    echo "Database is unavailable - sleeping"
-    sleep 2
+    "; then
+        echo "✅ Database is up!"
+        break
+    else
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        echo "Database is unavailable - sleeping (attempt $RETRY_COUNT/$MAX_RETRIES)"
+        sleep 2
+    fi
 done
-echo "Database is up!"
+
+if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+    echo "❌ ERROR: Could not connect to database after $MAX_RETRIES attempts"
+    echo "Please check:"
+    echo "  - DB_HOST is correct (should be 'db' for Docker service name)"
+    echo "  - DB_USERNAME and DB_PASSWORD are correct"
+    echo "  - Database container is running and healthy"
+    exit 1
+fi
 
 # Run migrations if requested
 if [ "$RUN_MIGRATIONS" = "true" ]; then
@@ -42,6 +65,13 @@ fi
 # Set permissions
 echo "Setting permissions..."
 chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache || true
+
+# Fix .env file permissions (if mounted from host)
+if [ -f /var/www/html/.env ]; then
+    chown www-data:www-data /var/www/html/.env || true
+    chmod 664 /var/www/html/.env || true
+    echo "✅ Fixed .env file permissions"
+fi
 
 # Start Supervisor in background for queue workers
 echo "Starting Supervisor for queue workers..."

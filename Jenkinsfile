@@ -6,7 +6,7 @@ pipeline {
         DOCKER_IMAGE = 'laravel-relations'
         DOCKER_CREDENTIALS_ID = 'docker-registry-credentials'
         SSH_CREDENTIALS_ID = 'ssh-deploy-credentials'
-        DEPLOY_HOST = '172.22.146.117'
+        DEPLOY_HOST = '172.19.248.167'
         DEPLOY_USER = 'ubuntu'
         DEPLOY_PATH = '/opt/laravel-relations'
         STAGGING_DEPLOY_PATH = '/opt/laravel-relations'
@@ -209,11 +209,6 @@ REMOTE_SCRIPT
 
                                 # Run migrations
                                 docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan migrate --force || true
-
-                                # Clear caches
-                                docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan config:cache
-                                docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan route:cache
-                                docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan view:cache
 
                                 # Health check
                                 sleep 10
