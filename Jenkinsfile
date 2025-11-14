@@ -142,11 +142,11 @@ pipeline {
                         }
                         
                         sh """
-                            ssh -o StrictHostKeyChecking=no ubuntu@172.22.146.117 "mkdir -p /opt/laravel-relations/docker_custom"
-                            scp -o StrictHostKeyChecking=no -r docker_custom ubuntu@172.22.146.117:/opt/laravel-relations/
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p /opt/laravel-relations/docker_custom"
+                            scp -o StrictHostKeyChecking=no -r docker_custom ${DEPLOY_USER}@${DEPLOY_HOST}:/opt/laravel-relations/
                             
                             # Create symlink for .env file in compose directory (for docker-compose variable substitution)
-                            ssh -o StrictHostKeyChecking=no ubuntu@172.22.146.117 << 'REMOTE_SCRIPT'
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << 'REMOTE_SCRIPT'
                                 cd /opt/laravel-relations/docker_custom/compose
                                 # Determine env file based on what exists
                                 if [ -f ../env/.env.staging ]; then
