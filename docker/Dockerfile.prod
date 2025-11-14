@@ -76,7 +76,7 @@ FROM php:8.2-fpm-alpine AS production
 
 WORKDIR /var/www/html
 
-# Install system dependencies for PHP extensions (Alpine packages)
+# Install system dependencies for PHP extensions and tools (Alpine packages)
 RUN apk add --no-cache \
     libpng-dev \
     libjpeg-turbo-dev \
@@ -85,6 +85,9 @@ RUN apk add --no-cache \
     icu-dev \
     oniguruma-dev \
     libsodium-dev \
+    supervisor \
+    bash \
+    curl \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) \
         gd \
@@ -99,11 +102,19 @@ RUN apk add --no-cache \
         intl \
         sodium
 
+# Install Composer (Alpine-compatible)
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
 # Copy app code and vendor from builder
 COPY --from=builder /var/www/html /var/www/html
 
-# Copy Composer for maintenance/artisan tasks
-COPY --from=builder /usr/bin/composer /usr/bin/composer
+# Copy entrypoint script
+COPY docker_custom/php/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Copy Supervisor configuration
+COPY docker_custom/supervisor/supervisord.conf /etc/supervisor/supervisord.conf
+COPY docker_custom/supervisor/laravel-worker.conf /etc/supervisor/conf.d/laravel-worker.conf
 
 # Copy PHP configuration files from builder (if any custom configs exist)
 COPY --from=builder /usr/local/etc/php/conf.d/ /usr/local/etc/php/conf.d/
@@ -114,5 +125,6 @@ RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cac
 # Expose PHP-FPM port
 EXPOSE 9000
 
-# Run PHP-FPM
+# Use entrypoint script
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["php-fpm"]

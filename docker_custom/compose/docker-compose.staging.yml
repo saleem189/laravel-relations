@@ -9,6 +9,7 @@ services:
     volumes:
       - storage_data:/var/www/html/storage
       - cache_data:/var/www/html/bootstrap/cache
+      - ../env/.env.staging:/var/www/html/.env
     depends_on:
       db:
         condition: service_healthy
