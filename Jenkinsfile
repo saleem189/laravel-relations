@@ -131,6 +131,25 @@ pipeline {
         }
 
 
+        stage('Test Server Connectivity') {
+            steps {
+                script {
+                    sh """
+                        echo "Testing connectivity to ${DEPLOY_HOST}..."
+                        echo "Jenkins container network info:"
+                        ip addr show || true
+                        ip route show || true
+                        echo ""
+                        echo "Testing ping to ${DEPLOY_HOST}..."
+                        ping -c 2 ${DEPLOY_HOST} || echo "⚠️  Ping failed"
+                        echo ""
+                        echo "Testing SSH port 22..."
+                        timeout 5 bash -c "</dev/tcp/${DEPLOY_HOST}/22" && echo "✅ Port 22 is open" || echo "❌ Port 22 is closed/unreachable"
+                    """
+                }
+            }
+        }
+
         stage('Copy docker_custom to Remote') {
             steps {
                 sshagent([SSH_CREDENTIALS_ID]) {
@@ -142,7 +161,8 @@ pipeline {
                         }
                         
                         sh """
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p /opt/laravel-relations/docker_custom"
+                            echo "Attempting SSH connection to ${DEPLOY_USER}@${DEPLOY_HOST}..."
+                            ssh -v -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p /opt/laravel-relations/docker_custom"
                             scp -o StrictHostKeyChecking=no -r docker_custom ${DEPLOY_USER}@${DEPLOY_HOST}:/opt/laravel-relations/
                             
                             # Create symlink for .env file in compose directory (for docker-compose variable substitution)
