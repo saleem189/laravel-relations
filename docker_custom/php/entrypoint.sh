@@ -74,8 +74,13 @@ if [ -f /var/www/html/.env ]; then
 fi
 
 # Start Supervisor in background for queue workers
-mkdir -p /var/log/supervisor
+mkdir -p /var/log/supervisor /var/run
 chown -R www-data:www-data /var/log/supervisor
+
+# Fix supervisor config if it has wrong user (for backward compatibility)
+if [ -f /etc/supervisor/conf.d/laravel-worker.conf ]; then
+    sed -i 's/user=appuser/user=www-data/g' /etc/supervisor/conf.d/laravel-worker.conf 2>/dev/null || true
+fi
 
 echo "Starting Supervisor for queue workers..."
 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
