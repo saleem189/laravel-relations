@@ -164,16 +164,26 @@ pipeline {
                         sh """
                             echo "Ensuring remote folders exist and are writable..."
                             ssh -o StrictHostKeyChecking=no ${sshTarget} "
-                                # Create directories if they don't exist (this will work even if parent is owned by root)
-                                mkdir -p ${STAGGING_DEPLOY_PATH}/docker_custom/env
-                                mkdir -p ${STAGGING_DEPLOY_PATH}/docker_custom/compose
+                                # Create directories with proper structure
+                                mkdir -p ${STAGGING_DEPLOY_PATH}/docker_custom/{env,compose,nginx,php,supervisor,jenkins}
                                 
-                                # Set ownership only for newly created directories (skip if no permission)
-                                # This prevents errors on existing root-owned files
-                                sudo chown -R ${DEPLOY_USER}:${DEPLOY_USER} ${STAGGING_DEPLOY_PATH}/docker_custom/env ${STAGGING_DEPLOY_PATH}/docker_custom/compose 2>/dev/null || echo 'Note: Some files may be owned by root (this is OK)'
+                                # If directories are owned by root, fix ownership (one-time setup)
+                                if [ \"\$(stat -c '%U' ${STAGGING_DEPLOY_PATH}/docker_custom 2>/dev/null)\" != \"${DEPLOY_USER}\" ]; then
+                                    echo 'Fixing ownership of deployment directory...'
+                                    sudo chown -R ${DEPLOY_USER}:${DEPLOY_USER} ${STAGGING_DEPLOY_PATH}/docker_custom || echo 'Note: Could not change ownership'
+                                fi
                                 
-                                # Ensure we can write to the directories
-                                chmod -R 755 ${STAGGING_DEPLOY_PATH}/docker_custom 2>/dev/null || true
+                                # Set proper permissions
+                                chmod -R 755 ${STAGGING_DEPLOY_PATH}/docker_custom
+                                chmod -R 700 ${STAGGING_DEPLOY_PATH}/docker_custom/env  # Protect .env files
+                                
+                                # Remove existing .env files if owned by root (so we can overwrite)
+                                if [ -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.staging ] && [ \"\$(stat -c '%U' ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.staging 2>/dev/null)\" != \"${DEPLOY_USER}\" ]; then
+                                    sudo rm -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.staging
+                                fi
+                                if [ -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.production ] && [ \"\$(stat -c '%U' ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.production 2>/dev/null)\" != \"${DEPLOY_USER}\" ]; then
+                                    sudo rm -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.production
+                                fi
                             "
 
                             echo "Copying docker_custom contents to remote..."
