@@ -9,9 +9,6 @@ pipeline {
         DEPLOY_HOST = '192.168.244.128'
         DEPLOY_USER = 'saleem'
         DEPLOY_PATH = '/opt/laravel-relations'
-        STAGGING_DEPLOY_PATH = '/opt/laravel-relations'
-        PRODUCTION_DEPLOY_PATH = '/opt/laravel-relations'
-        GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
 
     options {
@@ -25,87 +22,44 @@ pipeline {
             steps {
                 checkout scm
                 script {
-                    // Get branch name and clean it (remove origin/, remotes/origin/, etc.)
-                    def rawBranch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'master'
-                    env.BRANCH_NAME = rawBranch.replaceAll(/^origin\//, '').replaceAll(/^remotes\/origin\//, '').replaceAll(/^remotes\//, '')
-                    echo "Detected branch: ${env.BRANCH_NAME} (from: ${rawBranch})"
+                    env.BRANCH_NAME = (env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'master')
+                                        .replaceAll(/^origin\//, '')
+                                        .replaceAll(/^remotes\/origin\//, '')
+                                        .replaceAll(/^remotes\//, '')
+                    env.GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    echo "Branch: ${env.BRANCH_NAME}, Commit: ${env.GIT_COMMIT_SHORT}"
                 }
             }
         }
 
-        stage('Build Docker Image with Cache') {
+        stage('Build & Tag Docker Image') {
             steps {
                 script {
-                    if (env.BRANCH_NAME == 'develop') {
-                        env.IMAGE_TAG = "staging-${env.BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
-                        env.FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.IMAGE_TAG}"
-                        env.CACHE_IMAGE = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest"
-                    } else if (env.BRANCH_NAME == 'master') {
-                        env.IMAGE_TAG = "prod-${env.BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
-                        env.FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.IMAGE_TAG}"
-                        env.CACHE_IMAGE = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest"
-                    } else {
-                        env.IMAGE_TAG = "${env.BRANCH_NAME}-${env.BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
-                        env.FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.IMAGE_TAG}"
-                        env.CACHE_IMAGE = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest"
-                    }
-
-                    echo "Building Docker image: ${env.FULL_IMAGE_NAME} with cache from ${env.CACHE_IMAGE}"
-                    echo "Branch name for tagging: ${env.BRANCH_NAME}"
-
+                    def tagPrefix = (env.BRANCH_NAME == 'develop') ? 'staging' :
+                                    (env.BRANCH_NAME == 'master') ? 'prod' : env.BRANCH_NAME
+                    env.IMAGE_TAG = "${tagPrefix}-${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+                    env.FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.IMAGE_TAG}"
+                    env.LATEST_TAG = (tagPrefix == 'staging') ? 'staging-latest' :
+                                     (tagPrefix == 'prod') ? 'prod-latest' : 'latest'
+                    
+                    echo "Building Docker image ${env.FULL_IMAGE_NAME} with cache ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.LATEST_TAG}"
                     sh """
-                        # Pull cache image if exists
-                        docker pull ${env.CACHE_IMAGE} || true
-
-                        # Build Docker image using cache
-                        docker build \
-                            --cache-from ${env.CACHE_IMAGE} \
-                            -t ${env.FULL_IMAGE_NAME} \
-                            -f docker/Dockerfile.prod .
-
-                        # Tag latest for branch
-                        if [ "${env.BRANCH_NAME}" = "develop" ]; then
-                            echo "Tagging as staging-latest..."
-                            docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
-                            echo "✅ Tagged: ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest"
-                        elif [ "${env.BRANCH_NAME}" = "master" ]; then
-                            echo "Tagging as prod-latest..."
-                            docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
-                            echo "✅ Tagged: ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest"
-                        else
-                            echo "Tagging as latest for branch: ${env.BRANCH_NAME}"
-                            docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
-                            echo "✅ Tagged: ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest"
-                        fi
+                        docker pull ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.LATEST_TAG} || true
+                        docker build --cache-from ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.LATEST_TAG} -t ${env.FULL_IMAGE_NAME} -f docker/Dockerfile.prod .
+                        docker tag ${env.FULL_IMAGE_NAME} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.LATEST_TAG}
                     """
                 }
             }
         }
 
-        stage('Push to Registry') {
+        stage('Push Docker Image') {
             steps {
                 script {
-                    echo "Pushing Docker image: ${env.FULL_IMAGE_NAME}"
-                    echo "Branch name: ${env.BRANCH_NAME}"
                     withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         sh """
                             echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
                             docker push ${env.FULL_IMAGE_NAME}
-                            
-                            # Push latest tag based on branch
-                            if [ "${env.BRANCH_NAME}" = "develop" ]; then
-                                echo "Pushing staging-latest tag..."
-                                docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest
-                                echo "✅ Successfully pushed ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:staging-latest"
-                            elif [ "${env.BRANCH_NAME}" = "master" ]; then
-                                echo "Pushing prod-latest tag..."
-                                docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest
-                                echo "✅ Successfully pushed ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:prod-latest"
-                            else
-                                echo "Pushing latest tag for branch: ${env.BRANCH_NAME}"
-                                docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
-                                echo "✅ Successfully pushed ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest"
-                            fi
+                            docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.LATEST_TAG}
                         """
                     }
                 }
@@ -115,160 +69,27 @@ pipeline {
         stage('Stash Deployment Info') {
             steps {
                 script {
-                    def commit = env.GIT_COMMIT_SHORT
-                    def timestamp = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone('UTC'))
                     writeFile file: 'deployment-info.txt', text: """
-                                        IMAGE_TAG=${env.IMAGE_TAG}
-                                        FULL_IMAGE_NAME=${env.FULL_IMAGE_NAME}
-                                        BRANCH_NAME=${env.BRANCH_NAME}
-                                        BUILD_NUMBER=${env.BUILD_NUMBER}
-                                        GIT_COMMIT=${commit}
-                                        DEPLOY_TIMESTAMP=${timestamp}
-                                    """
+                        IMAGE_TAG=${env.IMAGE_TAG}
+                        FULL_IMAGE_NAME=${env.FULL_IMAGE_NAME}
+                        BRANCH_NAME=${env.BRANCH_NAME}
+                        BUILD_NUMBER=${env.BUILD_NUMBER}
+                        GIT_COMMIT=${env.GIT_COMMIT_SHORT}
+                        DEPLOY_TIMESTAMP=${new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone('UTC'))}
+                    """
                     stash includes: 'deployment-info.txt', name: 'deployment-info'
                 }
             }
         }
-
-
-        stage('Test Server Connectivity') {
-            steps {
-                script {
-                    sh """
-                        echo "Testing connectivity to ${DEPLOY_HOST}..."
-                        echo "Jenkins container network info:"
-                        ip addr show || true
-                        ip route show || true
-                        echo ""
-                        echo "Testing ping to ${DEPLOY_HOST}..."
-                        ping -c 2 ${DEPLOY_HOST} || echo "⚠️  Ping failed"
-                        echo ""
-                        echo "Testing SSH port 22..."
-                        timeout 5 bash -c "</dev/tcp/${DEPLOY_HOST}/22" && echo "✅ Port 22 is open" || echo "❌ Port 22 is closed/unreachable"
-                    """
-                }
-            }
-        }
-
-        stage('Prepare & Copy docker_custom to Remote') {
-            steps {
-                sshagent([SSH_CREDENTIALS_ID]) {
-                    script {
-                        def targetEnvName = '.env.staging'
-                        if (env.BRANCH_NAME == 'master') {
-                            targetEnvName = '.env.production'
-                        }
-
-                        def sshTarget = "${DEPLOY_USER}@${DEPLOY_HOST}"
-
-                        sh """
-                            echo "Ensuring remote folders exist and are writable..."
-                            ssh -o StrictHostKeyChecking=no ${sshTarget} "
-                                # Create directories with proper structure
-                                mkdir -p ${STAGGING_DEPLOY_PATH}/docker_custom/{env,compose,nginx,php,supervisor,jenkins}
-                                
-                                # Check and fix ownership if needed
-                                OWNER=\$(stat -c '%U' ${STAGGING_DEPLOY_PATH}/docker_custom 2>/dev/null || echo '')
-                                if [ -n \"\$OWNER\" ] && [ \"\$OWNER\" != \"${DEPLOY_USER}\" ]; then
-                                    echo 'Fixing ownership of deployment directory...'
-                                    sudo chown -R ${DEPLOY_USER}:${DEPLOY_USER} ${STAGGING_DEPLOY_PATH}/docker_custom || echo 'Note: Could not change ownership'
-                                fi
-                                
-                                # Set proper permissions
-                                chmod -R 755 ${STAGGING_DEPLOY_PATH}/docker_custom
-                                chmod -R 700 ${STAGGING_DEPLOY_PATH}/docker_custom/env 2>/dev/null || true
-                                
-                                # Remove existing .env files if owned by root (so we can overwrite)
-                                if [ -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.staging ]; then
-                                    FILE_OWNER=\$(stat -c '%U' ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.staging 2>/dev/null || echo '')
-                                    if [ -n \"\$FILE_OWNER\" ] && [ \"\$FILE_OWNER\" != \"${DEPLOY_USER}\" ]; then
-                                        sudo rm -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.staging
-                                    fi
-                                fi
-                                if [ -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.production ]; then
-                                    FILE_OWNER=\$(stat -c '%U' ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.production 2>/dev/null || echo '')
-                                    if [ -n \"\$FILE_OWNER\" ] && [ \"\$FILE_OWNER\" != \"${DEPLOY_USER}\" ]; then
-                                        sudo rm -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.production
-                                    fi
-                                fi
-                            "
-
-                            echo "Copying docker_custom contents to remote..."
-                            scp -o StrictHostKeyChecking=no -r docker_custom/* ${sshTarget}:${STAGGING_DEPLOY_PATH}/docker_custom/
-
-                            echo "Creating .env symlink on remote..."
-                            ssh -o StrictHostKeyChecking=no ${sshTarget} /bin/bash << 'EOF'
-                                cd /opt/laravel-relations/docker_custom/compose
-
-                                # Determine env file
-                                if [ -f ../env/.env.staging ]; then
-                                    ENV_FILE="../env/.env.staging"
-                                elif [ -f ../env/.env.production ]; then
-                                    ENV_FILE="../env/.env.production"
-                                else
-                                    echo "⚠️  No .env file found!"
-                                    exit 1
-                                fi
-
-                                # Remove existing .env if it's not a symlink
-                                if [ -f .env ] && [ ! -L .env ]; then
-                                    rm -f .env
-                                fi
-
-                                # Create or update symlink
-                                if [ ! -L .env ] || [ "$(readlink .env)" != "$ENV_FILE" ]; then
-                                    ln -sf "$ENV_FILE" .env
-                                    echo "✅ Symlink created: .env -> $ENV_FILE"
-                                else
-                                    echo "✅ Symlink already exists"
-                                fi
-EOF
-                        """
-                    }
-                }
-            }
-        }
-
-
-
-
 
         stage('Deploy to Staging') {
             when { branch 'develop' }
             steps {
                 script {
                     unstash 'deployment-info'
-                    echo "Deploying to Staging: ${env.FULL_IMAGE_NAME}"
-
-                    sshagent([SSH_CREDENTIALS_ID]) {
-                        withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                            def sshTarget = "${DEPLOY_USER}@${DEPLOY_HOST}"
-                            sh """
-                                ssh -o StrictHostKeyChecking=no ${sshTarget} << EOF
-                                set -e
-                                cd ${STAGGING_DEPLOY_PATH}
-
-                                echo "Logging in to Docker..."
-                                echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-
-                                echo "Pulling image: ${env.FULL_IMAGE_NAME}..."
-                                docker pull ${env.FULL_IMAGE_NAME}
-
-                                echo "Deploying containers..."
-                                docker compose -f docker_custom/compose/docker-compose.staging.yml up -d --no-build
-
-                                echo "Running migrations..."
-                                docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan migrate --force || true
-
-                                echo "Ensuring supervisor log directory exists..."
-                                mkdir -p /var/log/supervisor
-
-                                echo "Health check - list containers:"
-                                docker compose -f docker_custom/compose/docker-compose.staging.yml ps
-                                EOF
-                            """
-                        }
-                    }
+                    def envFile = '.env.staging'
+                    def composeFile = 'docker-compose.staging.yml'
+                    deployDocker(envFile, composeFile)
                 }
             }
         }
@@ -279,64 +100,58 @@ EOF
                 script {
                     input message: 'Deploy to Production?', ok: 'Deploy'
                     unstash 'deployment-info'
-                    echo "Deploying to Production: ${env.FULL_IMAGE_NAME}"
-                    sshagent([SSH_CREDENTIALS_ID]) {
-                        withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                            // sh """
-                            //     ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
-                            //     set -e
-                            //     cd ${PRODUCTION_DEPLOY_PATH}
-
-                            //     # Login to Docker
-                            //     echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-
-                            //     # Pull latest image
-                            //     docker pull ${env.FULL_IMAGE_NAME}
-
-                            //     # Update environment
-                            //     export IMAGE_TAG=${env.IMAGE_TAG}
-                            //     export DOCKER_REGISTRY=${DOCKER_REGISTRY}
-
-                            //     # Deploy with Docker Compose
-                            //     docker compose -f docker_custom/compose/docker-compose.production.yml up -d --no-build
-
-                            //     # Run migrations
-                            //     docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan migrate --force || true
-
-                            //     # Clear caches
-                            //     docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan config:cache
-                            //     docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan route:cache
-                            //     docker compose -f docker_custom/compose/docker-compose.production.yml exec -T app php artisan view:cache
-
-                            //     # Health check
-                            //     sleep 10
-                            //     docker compose -f docker_custom/compose/docker-compose.production.yml ps
-                            //     EOF
-                            // """
-                            sh """
-                               echo "Deploying to Production: ${env.FULL_IMAGE_NAME}"
-                            """
-                        }
-                    }
+                    def envFile = '.env.production'
+                    def composeFile = 'docker-compose.production.yml'
+                    deployDocker(envFile, composeFile)
                 }
             }
         }
     }
 
     post {
-        success {
-            echo "Pipeline succeeded! Image: ${env.FULL_IMAGE_NAME}"
-        }
-        failure {
-            echo "Pipeline failed! Check logs for details."
-        }
+        success { echo "Pipeline succeeded! Image: ${env.FULL_IMAGE_NAME}" }
+        failure { echo "Pipeline failed! Check logs for details." }
         always {
             script {
-                // Optional: remove only this build's images
-                sh """
-docker rmi -f ${env.FULL_IMAGE_NAME} || true
-"""
+                sh "docker rmi -f ${env.FULL_IMAGE_NAME} || true"
             }
+        }
+    }
+}
+
+// Helper function to deploy docker on remote server
+def deployDocker(String envFile, String composeFile) {
+    def sshTarget = "${env.DEPLOY_USER}@${env.DEPLOY_HOST}"
+
+    sshagent([env.SSH_CREDENTIALS_ID]) {
+        withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+            sh """
+                echo "Preparing remote directories..."
+                ssh -o StrictHostKeyChecking=no ${sshTarget} '
+                    mkdir -p ${DEPLOY_PATH}/docker_custom/{env,compose,nginx,php,supervisor,jenkins}
+                    sudo chown -R ${DEPLOY_USER}:${DEPLOY_USER} ${DEPLOY_PATH}/docker_custom || true
+                    rm -f ${DEPLOY_PATH}/docker_custom/env/.env.* || true
+                '
+
+                echo "Copying docker_custom to remote..."
+                scp -o StrictHostKeyChecking=no -r docker_custom/* ${sshTarget}:${DEPLOY_PATH}/docker_custom/
+
+                echo "Setting .env symlink..."
+                ssh -o StrictHostKeyChecking=no ${sshTarget} '
+                    cd ${DEPLOY_PATH}/docker_custom/compose
+                    ln -sf ../env/${envFile} .env
+                '
+
+                echo "Logging into Docker and deploying containers..."
+                ssh -o StrictHostKeyChecking=no ${sshTarget} '
+                    cd ${DEPLOY_PATH}
+                    echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                    docker pull ${env.FULL_IMAGE_NAME}
+                    docker compose -f docker_custom/compose/${composeFile} up -d --no-build
+                    docker compose -f docker_custom/compose/${composeFile} exec -T app php artisan migrate --force || true
+                    docker compose -f docker_custom/compose/${composeFile} ps
+                '
+            """
         }
     }
 }
