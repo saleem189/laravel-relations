@@ -57,6 +57,12 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
     php artisan migrate --force
 fi
 
+# Generate APP_KEY if missing
+if [ -f /var/www/html/.env ] && ! grep -q "^APP_KEY=base64:" /var/www/html/.env; then
+    echo "Generating application key..."
+    php artisan key:generate --force || true
+fi
+
 # Create storage link if it doesn't exist
 if [ ! -L /var/www/html/public/storage ]; then
     echo "Creating storage symlink..."
@@ -66,9 +72,12 @@ fi
 # Clear and cache configuration
 if [ "$APP_ENV" = "production" ] || [ "$APP_ENV" = "staging" ]; then
     echo "Optimizing application for production..."
-    php artisan config:cache
-    php artisan route:cache
-    php artisan view:cache
+
+    # Clear the cache
+    php artisan optimize:clear || true
+
+    # Optimize the application
+    php artisan optimize || true
 fi
 
 # Set permissions

@@ -122,6 +122,9 @@ pipeline {
 // Helper function to deploy docker on remote server
 def deployDocker(String envFile, String composeFile) {
     def sshTarget = "${env.DEPLOY_USER}@${env.DEPLOY_HOST}"
+    // Determine latest tag based on compose file
+    def latestTag = composeFile.contains('staging') ? 'staging-latest' : 
+                    composeFile.contains('production') ? 'prod-latest' : 'latest'
 
     sshagent([env.SSH_CREDENTIALS_ID]) {
         withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
@@ -143,14 +146,14 @@ def deployDocker(String envFile, String composeFile) {
                 '
 
                 echo "Logging into Docker and deploying containers..."
-                ssh -o StrictHostKeyChecking=no ${sshTarget} '
+                ssh -o StrictHostKeyChecking=no ${sshTarget} "
                     cd ${DEPLOY_PATH}
-                    echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                    docker pull ${env.FULL_IMAGE_NAME}
-                    docker compose -f docker_custom/compose/${composeFile} up -d --no-build
+                    echo \\\$DOCKER_PASS | docker login -u \\\$DOCKER_USER --password-stdin
+                    docker pull ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${latestTag}
+                    IMAGE_TAG=${latestTag} docker compose -f docker_custom/compose/${composeFile} up -d --no-build --force-recreate
                     docker compose -f docker_custom/compose/${composeFile} exec -T app php artisan migrate --force || true
                     docker compose -f docker_custom/compose/${composeFile} ps
-                '
+                "
             """
         }
     }
