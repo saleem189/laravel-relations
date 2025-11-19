@@ -158,7 +158,7 @@ pipeline {
                         if (env.BRANCH_NAME == 'master') {
                             targetEnvName = '.env.production'
                         }
-                        
+
                         def sshTarget = "${DEPLOY_USER}@${DEPLOY_HOST}"
 
                         sh """
@@ -191,18 +191,19 @@ pipeline {
                                 fi
 
                                 # Create or update symlink
-                                if [ ! -L .env ] || [ "$(readlink .env)" != "$ENV_FILE" ]; then
-                                    ln -sf "$ENV_FILE" .env
-                                    echo "✅ Symlink created: .env -> $ENV_FILE"
+                                if [ ! -L .env ] || [ "\$(readlink .env)" != "\$ENV_FILE" ]; then
+                                    ln -sf "\$ENV_FILE" .env
+                                    echo "✅ Symlink created: .env -> \$ENV_FILE"
                                 else
                                     echo "✅ Symlink already exists"
                                 fi
-REMOTE_SCRIPT
+                            REMOTE_SCRIPT
                         """
                     }
                 }
             }
         }
+
 
 
 
