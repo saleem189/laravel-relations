@@ -170,7 +170,7 @@ pipeline {
                             scp -o StrictHostKeyChecking=no -r docker_custom/* ${DEPLOY_USER}@${DEPLOY_HOST}:${STAGGING_DEPLOY_PATH}/docker_custom/
 
                             echo "Creating .env symlink on remote..."
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << 'REMOTE_SCRIPT'
+                            ssh -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" << 'REMOTE_SCRIPT'
                                 cd /opt/laravel-relations/docker_custom/compose
 
                                 # Determine env file
