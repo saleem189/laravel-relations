@@ -89,10 +89,13 @@ chown -R www-data:www-data /var/log/supervisor
 # Fix supervisor config if it has wrong user (for backward compatibility)
 if [ -f /etc/supervisor/conf.d/laravel-worker.conf ]; then
     sed -i 's/user=appuser/user=www-data/g' /etc/supervisor/conf.d/laravel-worker.conf 2>/dev/null || true
+    # Also fix any other variations
+    sed -i 's/^user=.*/user=www-data/g' /etc/supervisor/conf.d/laravel-worker.conf 2>/dev/null || true
 fi
 
 echo "Starting Supervisor for queue workers..."
-/usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+# Start supervisor in background, don't fail if it has issues
+/usr/bin/supervisord -c /etc/supervisor/supervisord.conf || echo "⚠️  Supervisor failed to start, continuing anyway..."
 
 # Start PHP-FPM in foreground
 echo "Starting PHP-FPM..."
