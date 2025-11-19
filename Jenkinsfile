@@ -164,8 +164,16 @@ pipeline {
                         sh """
                             echo "Ensuring remote folders exist and are writable..."
                             ssh -o StrictHostKeyChecking=no ${sshTarget} "
-                                mkdir -p ${STAGGING_DEPLOY_PATH}/docker_custom
-                                chown -R ${DEPLOY_USER}:${DEPLOY_USER} ${STAGGING_DEPLOY_PATH}/docker_custom
+                                # Create directories if they don't exist (this will work even if parent is owned by root)
+                                mkdir -p ${STAGGING_DEPLOY_PATH}/docker_custom/env
+                                mkdir -p ${STAGGING_DEPLOY_PATH}/docker_custom/compose
+                                
+                                # Set ownership only for newly created directories (skip if no permission)
+                                # This prevents errors on existing root-owned files
+                                sudo chown -R ${DEPLOY_USER}:${DEPLOY_USER} ${STAGGING_DEPLOY_PATH}/docker_custom/env ${STAGGING_DEPLOY_PATH}/docker_custom/compose 2>/dev/null || echo 'Note: Some files may be owned by root (this is OK)'
+                                
+                                # Ensure we can write to the directories
+                                chmod -R 755 ${STAGGING_DEPLOY_PATH}/docker_custom 2>/dev/null || true
                             "
 
                             echo "Copying docker_custom contents to remote..."
