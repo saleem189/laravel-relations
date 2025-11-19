@@ -74,6 +74,9 @@ if [ -f /var/www/html/.env ]; then
 fi
 
 # Start Supervisor in background for queue workers
+mkdir -p /var/log/supervisor
+chown -R www-data:www-data /var/log/supervisor
+
 echo "Starting Supervisor for queue workers..."
 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
 
