@@ -57,10 +57,13 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
     php artisan migrate --force
 fi
 
-# Generate APP_KEY if missing
-if [ -f /var/www/html/.env ] && ! grep -q "^APP_KEY=base64:" /var/www/html/.env; then
-    echo "Generating application key..."
-    php artisan key:generate --force || true
+# Generate APP_KEY if empty
+if [ -f /var/www/html/.env ]; then
+    APP_KEY_VALUE=$(grep "^APP_KEY=" /var/www/html/.env | cut -d '=' -f2- | tr -d ' ')
+    if [ -z "$APP_KEY_VALUE" ]; then
+        echo "Generating application key..."
+        php artisan key:generate || echo "⚠️  Warning: Failed to generate APP_KEY"
+    fi
 fi
 
 # Create storage link if it doesn't exist
