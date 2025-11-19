@@ -158,19 +158,21 @@ pipeline {
                         if (env.BRANCH_NAME == 'master') {
                             targetEnvName = '.env.production'
                         }
+                        
+                        def sshTarget = "${DEPLOY_USER}@${DEPLOY_HOST}"
 
                         sh """
                             echo "Ensuring remote folders exist and are writable..."
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "
+                            ssh -o StrictHostKeyChecking=no ${sshTarget} "
                                 mkdir -p ${STAGGING_DEPLOY_PATH}/docker_custom
                                 chown -R ${DEPLOY_USER}:${DEPLOY_USER} ${STAGGING_DEPLOY_PATH}/docker_custom
                             "
 
                             echo "Copying docker_custom contents to remote..."
-                            scp -o StrictHostKeyChecking=no -r docker_custom/* ${DEPLOY_USER}@${DEPLOY_HOST}:${STAGGING_DEPLOY_PATH}/docker_custom/
+                            scp -o StrictHostKeyChecking=no -r docker_custom/* ${sshTarget}:${STAGGING_DEPLOY_PATH}/docker_custom/
 
                             echo "Creating .env symlink on remote..."
-                            ssh -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" << 'REMOTE_SCRIPT'
+                            ssh -o StrictHostKeyChecking=no ${sshTarget} << 'REMOTE_SCRIPT'
                                 cd /opt/laravel-relations/docker_custom/compose
 
                                 # Determine env file
@@ -214,8 +216,9 @@ REMOTE_SCRIPT
 
                     sshagent([SSH_CREDENTIALS_ID]) {
                         withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                            def sshTarget = "${DEPLOY_USER}@${DEPLOY_HOST}"
                             sh """
-                                ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << EOF
+                                ssh -o StrictHostKeyChecking=no ${sshTarget} << EOF
                                 set -e
                                 cd ${STAGGING_DEPLOY_PATH}
 
