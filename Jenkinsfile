@@ -150,46 +150,50 @@ pipeline {
             }
         }
 
-        stage('Copy docker_custom to Remote') {
+        stage('Prepare & Copy docker_custom to Remote') {
             steps {
                 sshagent([SSH_CREDENTIALS_ID]) {
                     script {
-                        // Determine which env file to symlink based on branch
                         def targetEnvName = '.env.staging'
                         if (env.BRANCH_NAME == 'master') {
                             targetEnvName = '.env.production'
                         }
-                        
+
                         sh """
-                            echo "Attempting SSH connection to ${DEPLOY_USER}@${DEPLOY_HOST}..."
-                            ssh -v -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p /opt/laravel-relations/docker_custom"
-                            scp -o StrictHostKeyChecking=no -r docker_custom ${DEPLOY_USER}@${DEPLOY_HOST}:/opt/laravel-relations/
-                            
-                            # Create symlink for .env file in compose directory (for docker-compose variable substitution)
+                            echo "Ensuring remote folders exist and are writable..."
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "
+                                mkdir -p ${STAGGING_DEPLOY_PATH}/docker_custom
+                                chown -R ${DEPLOY_USER}:${DEPLOY_USER} ${STAGGING_DEPLOY_PATH}/docker_custom
+                            "
+
+                            echo "Copying docker_custom contents to remote..."
+                            scp -o StrictHostKeyChecking=no -r docker_custom/* ${DEPLOY_USER}@${DEPLOY_HOST}:${STAGGING_DEPLOY_PATH}/docker_custom/
+
+                            echo "Creating .env symlink on remote..."
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} << 'REMOTE_SCRIPT'
                                 cd /opt/laravel-relations/docker_custom/compose
-                                # Determine env file based on what exists
+
+                                # Determine env file
                                 if [ -f ../env/.env.staging ]; then
                                     ENV_FILE="../env/.env.staging"
                                 elif [ -f ../env/.env.production ]; then
                                     ENV_FILE="../env/.env.production"
                                 else
-                                    echo "⚠️  Warning: No .env.staging or .env.production found"
+                                    echo "⚠️  No .env file found!"
                                     exit 1
                                 fi
-                                
+
                                 # Remove existing .env if it's not a symlink
                                 if [ -f .env ] && [ ! -L .env ]; then
-                                    rm .env
-                                fi
-                                
-                                # Create symlink if it doesn't exist or update if pointing to wrong file
-                                if [ ! -L .env ] || [ "\$(readlink .env)" != "\$ENV_FILE" ]; then
                                     rm -f .env
-                                    ln -s "\$ENV_FILE" .env
-                                    echo "✅ Created symlink: compose/.env -> \$ENV_FILE"
+                                fi
+
+                                # Create or update symlink
+                                if [ ! -L .env ] || [ "$(readlink .env)" != "$ENV_FILE" ]; then
+                                    ln -sf "$ENV_FILE" .env
+                                    echo "✅ Symlink created: .env -> $ENV_FILE"
                                 else
-                                    echo "✅ Symlink already exists and points to correct file"
+                                    echo "✅ Symlink already exists"
                                 fi
 REMOTE_SCRIPT
                         """
@@ -207,6 +211,7 @@ REMOTE_SCRIPT
                 script {
                     unstash 'deployment-info'
                     echo "Deploying to Staging: ${env.FULL_IMAGE_NAME}"
+
                     sshagent([SSH_CREDENTIALS_ID]) {
                         withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                             sh """
@@ -214,24 +219,22 @@ REMOTE_SCRIPT
                                 set -e
                                 cd ${STAGGING_DEPLOY_PATH}
 
-                                # Login to Docker
+                                echo "Logging in to Docker..."
                                 echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
 
-                                # Pull latest image
+                                echo "Pulling image: ${env.FULL_IMAGE_NAME}..."
                                 docker pull ${env.FULL_IMAGE_NAME}
 
-                                # Update environment
-                                export IMAGE_TAG=${env.IMAGE_TAG}
-                                export DOCKER_REGISTRY=${DOCKER_REGISTRY}
-
-                                # Deploy with Docker Compose
+                                echo "Deploying containers..."
                                 docker compose -f docker_custom/compose/docker-compose.staging.yml up -d --no-build
 
-                                # Run migrations
+                                echo "Running migrations..."
                                 docker compose -f docker_custom/compose/docker-compose.staging.yml exec -T app php artisan migrate --force || true
 
-                                # Health check
-                                sleep 10
+                                echo "Ensuring supervisor log directory exists..."
+                                mkdir -p /var/log/supervisor
+
+                                echo "Health check - list containers:"
                                 docker compose -f docker_custom/compose/docker-compose.staging.yml ps
                                 EOF
                             """
