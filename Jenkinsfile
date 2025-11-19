@@ -167,22 +167,29 @@ pipeline {
                                 # Create directories with proper structure
                                 mkdir -p ${STAGGING_DEPLOY_PATH}/docker_custom/{env,compose,nginx,php,supervisor,jenkins}
                                 
-                                # If directories are owned by root, fix ownership (one-time setup)
-                                if [ \"\$(stat -c '%U' ${STAGGING_DEPLOY_PATH}/docker_custom 2>/dev/null)\" != \"${DEPLOY_USER}\" ]; then
+                                # Check and fix ownership if needed
+                                OWNER=\$(stat -c '%U' ${STAGGING_DEPLOY_PATH}/docker_custom 2>/dev/null || echo '')
+                                if [ -n \"\$OWNER\" ] && [ \"\$OWNER\" != \"${DEPLOY_USER}\" ]; then
                                     echo 'Fixing ownership of deployment directory...'
                                     sudo chown -R ${DEPLOY_USER}:${DEPLOY_USER} ${STAGGING_DEPLOY_PATH}/docker_custom || echo 'Note: Could not change ownership'
                                 fi
                                 
                                 # Set proper permissions
                                 chmod -R 755 ${STAGGING_DEPLOY_PATH}/docker_custom
-                                chmod -R 700 ${STAGGING_DEPLOY_PATH}/docker_custom/env  # Protect .env files
+                                chmod -R 700 ${STAGGING_DEPLOY_PATH}/docker_custom/env 2>/dev/null || true
                                 
                                 # Remove existing .env files if owned by root (so we can overwrite)
-                                if [ -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.staging ] && [ \"\$(stat -c '%U' ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.staging 2>/dev/null)\" != \"${DEPLOY_USER}\" ]; then
-                                    sudo rm -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.staging
+                                if [ -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.staging ]; then
+                                    FILE_OWNER=\$(stat -c '%U' ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.staging 2>/dev/null || echo '')
+                                    if [ -n \"\$FILE_OWNER\" ] && [ \"\$FILE_OWNER\" != \"${DEPLOY_USER}\" ]; then
+                                        sudo rm -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.staging
+                                    fi
                                 fi
-                                if [ -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.production ] && [ \"\$(stat -c '%U' ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.production 2>/dev/null)\" != \"${DEPLOY_USER}\" ]; then
-                                    sudo rm -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.production
+                                if [ -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.production ]; then
+                                    FILE_OWNER=\$(stat -c '%U' ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.production 2>/dev/null || echo '')
+                                    if [ -n \"\$FILE_OWNER\" ] && [ \"\$FILE_OWNER\" != \"${DEPLOY_USER}\" ]; then
+                                        sudo rm -f ${STAGGING_DEPLOY_PATH}/docker_custom/env/.env.production
+                                    fi
                                 fi
                             "
 
@@ -190,7 +197,7 @@ pipeline {
                             scp -o StrictHostKeyChecking=no -r docker_custom/* ${sshTarget}:${STAGGING_DEPLOY_PATH}/docker_custom/
 
                             echo "Creating .env symlink on remote..."
-                            ssh -o StrictHostKeyChecking=no ${sshTarget} << 'REMOTE_SCRIPT'
+                            ssh -o StrictHostKeyChecking=no ${sshTarget} /bin/bash << 'EOF'
                                 cd /opt/laravel-relations/docker_custom/compose
 
                                 # Determine env file
@@ -209,13 +216,13 @@ pipeline {
                                 fi
 
                                 # Create or update symlink
-                                if [ ! -L .env ] || [ "\$(readlink .env)" != "\$ENV_FILE" ]; then
-                                    ln -sf "\$ENV_FILE" .env
-                                    echo "✅ Symlink created: .env -> \$ENV_FILE"
+                                if [ ! -L .env ] || [ "$(readlink .env)" != "$ENV_FILE" ]; then
+                                    ln -sf "$ENV_FILE" .env
+                                    echo "✅ Symlink created: .env -> $ENV_FILE"
                                 else
                                     echo "✅ Symlink already exists"
                                 fi
-                            REMOTE_SCRIPT
+EOF
                         """
                     }
                 }
