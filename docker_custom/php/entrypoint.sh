@@ -3,6 +3,15 @@ set -e
 
 echo "Starting Laravel application entrypoint..."
 
+# Initialize public directory in shared volume for nginx
+# Volume mount overrides image files, so we need to populate it
+if [ ! -f /var/www/html/public/index.php ] && [ -d /tmp/app_backup/public ]; then
+    echo "Initializing public directory in shared volume for nginx..."
+    cp -a /tmp/app_backup/public/. /var/www/html/public/ 2>/dev/null || true
+    chown -R www-data:www-data /var/www/html/public 2>/dev/null || true
+    echo "✅ Public directory initialized"
+fi
+
 # Wait for database to be ready
 echo "Waiting for database connection..."
 echo "DB_HOST: ${DB_HOST:-db}"

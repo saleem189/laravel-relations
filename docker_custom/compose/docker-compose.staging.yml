@@ -7,6 +7,7 @@ services:
     env_file:
       - ../env/.env.staging
     volumes:
+      - app_public:/var/www/html/public
       - storage_data:/var/www/html/storage
       - cache_data:/var/www/html/bootstrap/cache
       - ../env/.env.staging:/var/www/html/.env
@@ -32,6 +33,7 @@ services:
       - "8081:80"
     volumes:
       - ../nginx/conf.d/staging.conf:/etc/nginx/conf.d/default.conf:ro
+      - app_public:/var/www/html/public:ro
       - nginx_logs:/var/log/nginx
     depends_on:
       - app
@@ -84,6 +86,8 @@ services:
       retries: 5
 
 volumes:
+  app_public:
+    driver: local
   db_data:
     driver: local
   redis_data:

@@ -109,6 +109,10 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # Copy app code and vendor from builder
 COPY --from=builder /var/www/html /var/www/html
 
+# Create backup of public directory for volume initialization
+RUN mkdir -p /tmp/app_backup/public && \
+    cp -r /var/www/html/public/* /tmp/app_backup/public/ 2>/dev/null || true
+
 # Copy entrypoint script
 COPY docker_custom/php/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
