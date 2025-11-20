@@ -120,7 +120,10 @@ COPY docker_custom/supervisor/laravel-worker.conf /etc/supervisor/conf.d/laravel
 COPY --from=builder /usr/local/etc/php/conf.d/ /usr/local/etc/php/conf.d/
 
 # Set Laravel-specific permissions
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+# Set ownership for entire app directory to www-data
+RUN chown -R www-data:www-data /var/www/html && \
+    chmod -R 755 /var/www/html && \
+    chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
 # Expose PHP-FPM port
 EXPOSE 9000

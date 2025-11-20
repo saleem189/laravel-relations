@@ -151,7 +151,7 @@ def deployDocker(String envFile, String composeFile) {
                     echo \\\$DOCKER_PASS | docker login -u \\\$DOCKER_USER --password-stdin
                     docker pull ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${latestTag}
                     IMAGE_TAG=${latestTag} docker compose -f docker_custom/compose/${composeFile} up -d --no-build --force-recreate
-                    docker compose -f docker_custom/compose/${composeFile} exec -T app php artisan migrate --force || true
+                    # docker compose -f docker_custom/compose/${composeFile} exec -T app php artisan migrate --force || true
                     docker compose -f docker_custom/compose/${composeFile} ps
                 "
             """

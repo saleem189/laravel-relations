@@ -75,25 +75,52 @@ fi
 # Set permissions BEFORE clearing cache (volumes might have wrong ownership)
 echo "Setting permissions..."
 # Ensure directories exist
-mkdir -p /var/www/html/storage /var/www/html/bootstrap/cache /var/www/html/storage/framework/cache /var/www/html/storage/framework/sessions /var/www/html/storage/framework/views /var/www/html/storage/logs || true
+mkdir -p /var/www/html/storage \
+         /var/www/html/bootstrap/cache \
+         /var/www/html/storage/framework/cache \
+         /var/www/html/storage/framework/cache/data \
+         /var/www/html/storage/framework/sessions \
+         /var/www/html/storage/framework/views \
+         /var/www/html/storage/logs || true
 
 # Fix ownership first, then permissions
-chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache || true
+# Note: bootstrap directory might be owned by root in the image, so we fix it too
+chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap || true
 chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache || true
+chmod 755 /var/www/html/bootstrap || true
+
+# Ensure all files in cache directories are writable
+find /var/www/html/bootstrap/cache -type f -exec chmod 664 {} \; 2>/dev/null || true
+find /var/www/html/bootstrap/cache -type d -exec chmod 775 {} \; 2>/dev/null || true
+find /var/www/html/storage/framework -type f -exec chmod 664 {} \; 2>/dev/null || true
+find /var/www/html/storage/framework -type d -exec chmod 775 {} \; 2>/dev/null || true
 
 # Clear and cache configuration
 if [ "$APP_ENV" = "production" ] || [ "$APP_ENV" = "staging" ]; then
     echo "Optimizing application for production..."
 
-    # Clear the cache
-    php artisan optimize:clear || true
-
+    # Clear individual caches to identify which one fails
+    echo "Clearing caches..."
+    php artisan config:clear || echo "⚠️  Warning: Failed to clear config cache"
+    php artisan route:clear || echo "⚠️  Warning: Failed to clear route cache"
+    php artisan view:clear || echo "⚠️  Warning: Failed to clear view cache"
+    php artisan event:clear || echo "⚠️  Warning: Failed to clear event cache"
+    
+    # Clear compiled services/packages
+    rm -f /var/www/html/bootstrap/cache/services.php /var/www/html/bootstrap/cache/packages.php 2>/dev/null || true
+    
     # Optimize the application
-    php artisan optimize || true
+    echo "Optimizing application..."
+    php artisan config:cache || echo "⚠️  Warning: Failed to cache config"
+    php artisan route:cache || echo "⚠️  Warning: Failed to cache routes"
+    php artisan view:cache || echo "⚠️  Warning: Failed to cache views"
     
     # Fix permissions again after optimization (in case new files were created)
-    chown -R www-data:www-data /var/www/html/bootstrap/cache || true
-    chmod -R 775 /var/www/html/bootstrap/cache || true
+    chown -R www-data:www-data /var/www/html/bootstrap /var/www/html/storage || true
+    find /var/www/html/bootstrap/cache -type f -exec chmod 664 {} \; 2>/dev/null || true
+    find /var/www/html/bootstrap/cache -type d -exec chmod 775 {} \; 2>/dev/null || true
+    find /var/www/html/storage/framework -type f -exec chmod 664 {} \; 2>/dev/null || true
+    find /var/www/html/storage/framework -type d -exec chmod 775 {} \; 2>/dev/null || true
 fi
 
 # Fix .env file permissions (if mounted from host)
