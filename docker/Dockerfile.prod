@@ -119,6 +119,11 @@ COPY docker_custom/supervisor/laravel-worker.conf /etc/supervisor/conf.d/laravel
 # Copy PHP configuration files from builder (if any custom configs exist)
 COPY --from=builder /usr/local/etc/php/conf.d/ /usr/local/etc/php/conf.d/
 
+# Create required directories for Supervisor (socket and PID files)
+# Ensure /run and /var/log directories exist for supervisor socket and logs
+RUN mkdir -p /run /var/log/supervisor && \
+    chmod 755 /run /var/log/supervisor
+
 # Set Laravel-specific permissions
 # Set ownership for entire app directory to www-data
 RUN chown -R www-data:www-data /var/www/html && \

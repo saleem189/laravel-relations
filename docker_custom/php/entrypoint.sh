@@ -131,7 +131,9 @@ if [ -f /var/www/html/.env ]; then
 fi
 
 # Start Supervisor in background for queue workers
-mkdir -p /var/log/supervisor /var/run
+# Ensure /run and /var/log directories exist with proper permissions for supervisor socket
+mkdir -p /var/log/supervisor /run
+chmod 755 /run /var/log/supervisor
 chown -R www-data:www-data /var/log/supervisor
 
 # Fix supervisor config if it has wrong user (for backward compatibility)
@@ -142,10 +144,23 @@ if [ -f /etc/supervisor/conf.d/laravel-worker.conf ]; then
 fi
 
 echo "Starting Supervisor for queue workers..."
-# Start supervisor in background, don't fail if it has issues
-/usr/bin/supervisord -c /etc/supervisor/supervisord.conf || echo "⚠️  Supervisor failed to start, continuing anyway..."
+# Start supervisor in daemon mode (nodaemon=false)
+# This ensures supervisor runs as a background daemon and socket is properly created
+/usr/bin/supervisord -c /etc/supervisor/supervisord.conf
 
-# Start PHP-FPM in foreground
+# Wait a moment for supervisor to start and create socket
+sleep 3
+
+# Verify supervisor socket exists and is accessible
+if [ -S /run/supervisord.sock ]; then
+    echo "✅ Supervisor socket created successfully"
+    # Check supervisor status to verify it's running
+    supervisorctl status || echo "⚠️  Warning: Could not connect to supervisor"
+else
+    echo "⚠️  Warning: Supervisor socket not found at /run/supervisord.sock"
+fi
+
+# Start PHP-FPM in foreground (this keeps container running)
 echo "Starting PHP-FPM..."
 exec php-fpm
 
