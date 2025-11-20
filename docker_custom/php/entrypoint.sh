@@ -72,6 +72,15 @@ if [ ! -L /var/www/html/public/storage ]; then
     php artisan storage:link || true
 fi
 
+# Set permissions BEFORE clearing cache (volumes might have wrong ownership)
+echo "Setting permissions..."
+# Ensure directories exist
+mkdir -p /var/www/html/storage /var/www/html/bootstrap/cache /var/www/html/storage/framework/cache /var/www/html/storage/framework/sessions /var/www/html/storage/framework/views /var/www/html/storage/logs || true
+
+# Fix ownership first, then permissions
+chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache || true
+chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache || true
+
 # Clear and cache configuration
 if [ "$APP_ENV" = "production" ] || [ "$APP_ENV" = "staging" ]; then
     echo "Optimizing application for production..."
@@ -81,11 +90,11 @@ if [ "$APP_ENV" = "production" ] || [ "$APP_ENV" = "staging" ]; then
 
     # Optimize the application
     php artisan optimize || true
+    
+    # Fix permissions again after optimization (in case new files were created)
+    chown -R www-data:www-data /var/www/html/bootstrap/cache || true
+    chmod -R 775 /var/www/html/bootstrap/cache || true
 fi
-
-# Set permissions
-echo "Setting permissions..."
-chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache || true
 
 # Fix .env file permissions (if mounted from host)
 if [ -f /var/www/html/.env ]; then
