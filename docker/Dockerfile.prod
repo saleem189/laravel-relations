@@ -83,7 +83,10 @@ RUN apk add --no-cache \
     supervisor \
     bash \
     curl \
-    php82-pecl-redis \
+    make \
+    g++ \
+    autoconf \
+    && pecl install redis \
     && docker-php-ext-enable redis \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) \
@@ -98,6 +101,7 @@ RUN apk add --no-cache \
         zip \
         intl \
         sodium
+
 
 # Install Composer (Alpine-compatible)
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
